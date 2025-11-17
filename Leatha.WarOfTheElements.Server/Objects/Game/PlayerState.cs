@@ -5,6 +5,7 @@ using System.Numerics;
 using Leatha.WarOfTheElements.Server.DataAccess.Entities;
 using MongoDB.Bson.Serialization.Attributes;
 using Newtonsoft.Json;
+using Leatha.WarOfTheElements.Common.Communication.Messages;
 
 namespace Leatha.WarOfTheElements.Server.Objects.Game
 {
@@ -38,6 +39,15 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
 
         [BsonIgnore]
         public int LastProcessedInputSeq { get; set; }
+
+        // Snapshot of latest input from this player (not persisted).
+        [BsonIgnore]
+        [JsonIgnore]
+        public PlayerInputObject? CurrentInput { get; set; } = new ();
+
+        // One-shot jump flag, consumed by game loop.
+        [BsonIgnore]
+        public bool PendingJump { get; set; }
 
         public const float WalkSpeed = 5f;
         public const float SprintMultiplier = 1.8f;
@@ -130,32 +140,34 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
 
             return desired;
         }
+
+        // Old version kept for reference:
         //public Vector3 ComputeDesiredVelocity(PlayerInputObject input, double dt)
         //{
         //    // View direction from client
         //    Yaw = input.Yaw;
         //    Pitch = input.Pitch;
-
+        //
         //    IsFlying = input.IsFlying;
         //    IsSprinting = input.IsSprinting;
-
+        //
         //    // Yaw is in radians.
         //    var forward = new Vector3(MathF.Sin(Yaw), 0, MathF.Cos(Yaw));
         //    var right = new Vector3(MathF.Cos(Yaw), 0, -MathF.Sin(Yaw));
-
+        //
         //    // Forward/Right: -1..1 axes
         //    var moveHorizontal = forward * input.Forward + right * input.Right;
         //    if (moveHorizontal.LengthSquared() > 1e-4f)
         //        moveHorizontal = Vector3.Normalize(moveHorizontal);
-
+        //
         //    var speed = WalkSpeed;
         //    if (IsSprinting)
         //        speed *= SprintMultiplier;
-
+        //
         //    var desired = Vector3.Zero;
         //    desired.X = moveHorizontal.X * speed;
         //    desired.Z = moveHorizontal.Z * speed;
-
+        //
         //    if (IsFlying)
         //    {
         //        // Up is used for vertical flying (-1..1)
@@ -166,10 +178,10 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
         //        // Vertical (Y) handled in PhysicsWorld (gravity + jump).
         //        desired.Y = 0f;
         //    }
-
+        //
         //    if (desired != Vector3.Zero)
         //        Debug.WriteLine($"Desired Velocity = { desired }");
-
+        //
         //    return desired;
         //}
     }

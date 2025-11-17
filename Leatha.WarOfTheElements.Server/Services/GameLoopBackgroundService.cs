@@ -38,6 +38,9 @@ namespace Leatha.WarOfTheElements.Server.Services
             var accumulator = 0.0;
             long tick = 0;
 
+            // Re-use this to avoid allocs every tick
+            var movedThisTick = new HashSet<Guid>();
+
             while (!stoppingToken.IsCancellationRequested)
             {
                 var frameTime = stopwatch.Elapsed.TotalSeconds;
@@ -46,7 +49,9 @@ namespace Leatha.WarOfTheElements.Server.Services
 
                 while (accumulator >= FixedDt)
                 {
-                    // 1) Process all queued inputs
+                    movedThisTick.Clear();
+
+                    // 1) Process all queued inputs – remember who moved
                     _inputQueue.Drain(inputs =>
                     {
                         foreach (var input in inputs)
@@ -65,12 +70,42 @@ namespace Leatha.WarOfTheElements.Server.Services
                                 PlayerState.JumpImpulse,
                                 playerState.IsOnGround);
 
-                            // Let client know which input seq we processed last.
+                            Debug.WriteLine(
+                                $"[{DateTime.Now:HH:mm:ss.ffff}] Input: Seq={input.Sequence} " +
+                                $"Desired=<{desiredVelocity.X:0.000},{desiredVelocity.Y:0.000},{desiredVelocity.Z:0.000}> " +
+                                $"Vel=<{velocity.X:0.000},{velocity.Y:0.000},{velocity.Z:0.000}>");
+
+                            //Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.ffff}] Input: Seq={input.Sequence} Vel={velocity}");
+
+                            // For reconciliation on client
                             playerState.LastProcessedInputSeq = input.Sequence;
 
-                            //Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.ffff}] (1): Sequence = { input.Sequence } | Body Velocity = { velocity } | Input DTO: { JsonSerializer.Serialize(input) }");
+                            movedThisTick.Add(input.PlayerId);
+
+                            //Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.ffff}] Input: Seq={input.Sequence} Vel={velocity} DTO={JsonSerializer.Serialize(input)}");
                         }
                     });
+
+                    // 1b) For players who had **no input** this tick, force horizontal speed = 0
+                    //foreach (var kvp in _gameWorld.Players)
+                    //{
+                    //    var playerState = kvp.Value;
+
+                    //    if (movedThisTick.Contains(playerState.PlayerId))
+                    //        continue;
+
+                    //    // Desired velocity = 0 => SetPlayerVelocity will zero X/Z,
+                    //    // keep Y controlled by gravity/jump logic.
+                    //    var desiredVelocity = Vector3.Zero;
+
+                    //    _physicsWorld.SetPlayerVelocity(
+                    //        playerState.PlayerId,
+                    //        desiredVelocity,
+                    //        playerState.IsFlying,
+                    //        jump: false,
+                    //        jumpImpulse: PlayerState.JumpImpulse,
+                    //        isOnGround: playerState.IsOnGround);
+                    //}
 
                     // 2) Step physics world
                     _physicsWorld.Step((float)FixedDt);
@@ -92,13 +127,14 @@ namespace Leatha.WarOfTheElements.Server.Services
 
                         playerState.Position = position;
                         playerState.Velocity = _physicsWorld.GetPlayerVelocity(playerState.PlayerId);
-                        //playerState.Orientation = orientation;
                         playerState.IsOnGround = grounded;
 
                         playerState.Orientation =
                             Quaternion.CreateFromAxisAngle(Vector3.UnitY, playerState.Yaw);
 
-                        //Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.ffff}] (2): PlayerState: {JsonSerializer.Serialize(playerState)}");
+                        Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.ffff}] State: Position = { playerState.Position } | Velocity = { playerState.Velocity } | Orientation = { playerState.Orientation }");
+
+                        //Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.ffff}] State: {JsonSerializer.Serialize(playerState)}");
                     }
 
                     tick++;
@@ -127,7 +163,6 @@ namespace Leatha.WarOfTheElements.Server.Services
                             .ToList()
                     };
 
-                    // Send correct snapshot.
                     await _serverClientHandler.SendSnapshot(snapshot, stoppingToken);
                 }
 
