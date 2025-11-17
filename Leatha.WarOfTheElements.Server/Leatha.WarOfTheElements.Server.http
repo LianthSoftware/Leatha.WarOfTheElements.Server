@@ -1,0 +1,6 @@
+@Leatha.WarOfTheElements.Server_HostAddress = http://localhost:5161
+
+GET {{Leatha.WarOfTheElements.Server_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

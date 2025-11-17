@@ -1,0 +1,37 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36518.9
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Leatha.WarOfTheElements.Server", "Leatha.WarOfTheElements.Server\Leatha.WarOfTheElements.Server.csproj", "{DC446C89-CD65-4B29-9D6C-4D26F01594E2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Leatha.WarOfTheElements.Common", "Leatha.WarOfTheElements.Common\Leatha.WarOfTheElements.Common.csproj", "{0A43D79E-4F90-455B-B959-D05FEFAFC5A8}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Leatha.WarOfTheElements.World", "Leatha.WarOfTheElements.World\Leatha.WarOfTheElements.World.csproj", "{8CC5F93A-4783-4952-AFCA-076BCA754F42}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{DC446C89-CD65-4B29-9D6C-4D26F01594E2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DC446C89-CD65-4B29-9D6C-4D26F01594E2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DC446C89-CD65-4B29-9D6C-4D26F01594E2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DC446C89-CD65-4B29-9D6C-4D26F01594E2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0A43D79E-4F90-455B-B959-D05FEFAFC5A8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0A43D79E-4F90-455B-B959-D05FEFAFC5A8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0A43D79E-4F90-455B-B959-D05FEFAFC5A8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0A43D79E-4F90-455B-B959-D05FEFAFC5A8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8CC5F93A-4783-4952-AFCA-076BCA754F42}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8CC5F93A-4783-4952-AFCA-076BCA754F42}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8CC5F93A-4783-4952-AFCA-076BCA754F42}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8CC5F93A-4783-4952-AFCA-076BCA754F42}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {F230D80C-3641-415B-9F42-40234E183F59}
+	EndGlobalSection
+EndGlobal

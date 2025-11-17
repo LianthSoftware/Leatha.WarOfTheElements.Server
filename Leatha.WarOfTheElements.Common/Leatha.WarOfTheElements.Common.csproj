@@ -1,0 +1,13 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
+    <Exec Command="xcopy &quot;$(TargetDir)*&quot; &quot;C:\Leatha\WORK\GODOT\Leatha.WarOfTheElements.Godot\lib\Leatha.WarOfTheElements.Common\&quot; /Y /I /S /R /Q" />
+  </Target>
+
+</Project>
