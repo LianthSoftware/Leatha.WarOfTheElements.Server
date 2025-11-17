@@ -1,10 +1,11 @@
 ﻿using Leatha.WarOfTheElements.Server.DataAccess.Entities;
+using Leatha.WarOfTheElements.Server.Services;
+using Leatha.WarOfTheElements.Server.Utilities;
 using Leatha.WarOfTheElements.World.Physics;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Numerics;
 using System.Text.RegularExpressions;
-using Leatha.WarOfTheElements.Server.Services;
-using Leatha.WarOfTheElements.Server.Utilities;
 
 namespace Leatha.WarOfTheElements.Server.Objects.Game
 {
@@ -69,6 +70,9 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
         {
             if (playerState == null)
                 return;
+
+            playerState.LastProcessedInputSeq = 0;
+            playerState.Velocity = Vector3.Zero;
 
             await _playerService.SavePlayerStateAsync(playerState);
 

@@ -62,13 +62,16 @@ namespace Leatha.WarOfTheElements.Server.Services
 
                             var desiredVelocity = playerState.ComputeDesiredVelocity(input, FixedDt);
 
-                            var velocity = _physicsWorld.SetPlayerVelocity(
-                                input.PlayerId,
-                                desiredVelocity,
-                                playerState.IsFlying,
-                                input.Jump,
-                                PlayerState.JumpImpulse,
-                                playerState.IsOnGround);
+                            var velocity = _physicsWorld.MovePlayerKinematic(
+                                input.PlayerId, desiredVelocity, (float)FixedDt);
+
+                            //var velocity = _physicsWorld.SetPlayerVelocity(
+                            //    input.PlayerId,
+                            //    desiredVelocity,
+                            //    playerState.IsFlying,
+                            //    input.Jump,
+                            //    PlayerState.JumpImpulse,
+                            //    playerState.IsOnGround);
 
                             Debug.WriteLine(
                                 $"[{DateTime.Now:HH:mm:ss.ffff}] Input: Seq={input.Sequence} " +
@@ -132,7 +135,9 @@ namespace Leatha.WarOfTheElements.Server.Services
                         playerState.Orientation =
                             Quaternion.CreateFromAxisAngle(Vector3.UnitY, playerState.Yaw);
 
-                        Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.ffff}] State: Position = { playerState.Position } | Velocity = { playerState.Velocity } | Orientation = { playerState.Orientation }");
+                        Debug.WriteLine($"[PostStep] Pos={playerState.Position} Vel={playerState.Velocity} Grounded={grounded}");
+
+                        //Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.ffff}] State: Position = { playerState.Position } | Velocity = { playerState.Velocity } | Orientation = { playerState.Orientation }");
 
                         //Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.ffff}] State: {JsonSerializer.Serialize(playerState)}");
                     }

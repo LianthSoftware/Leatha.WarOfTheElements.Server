@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Numerics;
 using System.Text.Json;
 using Leatha.WarOfTheElements.Common.Communication.Messages;
 using Leatha.WarOfTheElements.Common.Communication.Services;
@@ -82,6 +83,7 @@ namespace Leatha.WarOfTheElements.Server.Services
 
             // Reset last processed input.
             playerState.LastProcessedInputSeq = 0;
+            playerState.Velocity = Vector3.Zero;
             await _playerService.SavePlayerStateAsync(playerState);
 
             //// Add body to physics

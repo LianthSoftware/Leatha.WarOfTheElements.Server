@@ -275,6 +275,23 @@ namespace Leatha.WarOfTheElements.World.Physics
             }
         }
 
+        public Vector3 MovePlayerKinematic(Guid playerId, Vector3 desiredVelocity, float dt)
+        {
+            lock (_simLock)
+            {
+                if (!_playerBodies.TryGetValue(playerId, out var handle))
+                    return Vector3.Zero;
+
+                var body = _simulation.Bodies.GetBodyReference(handle);
+
+                // Move position directly (ignores friction)
+                body.Pose.Position += desiredVelocity * dt;
+
+                // You can keep vertical movement as is, or clamp to ground.
+                return desiredVelocity;
+            }
+        }
+
         /// <summary>
         /// Gets the player's pose and grounded flag (uses terrain if available).
         /// </summary>
