@@ -38,9 +38,6 @@ namespace Leatha.WarOfTheElements.Server.Services
             var accumulator = 0.0;
             long tick = 0;
 
-            // Re-use this to avoid allocs every tick
-            var movedThisTick = new HashSet<Guid>();
-
             while (!stoppingToken.IsCancellationRequested)
             {
                 var frameTime = stopwatch.Elapsed.TotalSeconds;
@@ -49,8 +46,6 @@ namespace Leatha.WarOfTheElements.Server.Services
 
                 while (accumulator >= FixedDt)
                 {
-                    movedThisTick.Clear();
-
                     // 1) Process all queued inputs – remember who moved
                     _inputQueue.Drain(inputs =>
                     {
@@ -60,10 +55,22 @@ namespace Leatha.WarOfTheElements.Server.Services
                             if (playerState is null)
                                 continue;
 
+                            if (input.Jump)
+                                Debug.WriteLine("Input JUMP");
+
                             var desiredVelocity = playerState.ComputeDesiredVelocity(input, FixedDt);
 
+                            // Combine kinematic horizontal + dynamic vertical (jump)
                             var velocity = _physicsWorld.MovePlayerKinematic(
-                                input.PlayerId, desiredVelocity, (float)FixedDt);
+                                input.PlayerId,
+                                desiredVelocity,
+                                (float)FixedDt,
+                                input.Jump,
+                                playerState.IsOnGround,
+                                PlayerState.JumpImpulse);
+
+                            if (velocity.Y > 0)
+                                Debug.WriteLine("Velocity Y > 0");
 
                             //var velocity = _physicsWorld.SetPlayerVelocity(
                             //    input.PlayerId,
@@ -83,32 +90,9 @@ namespace Leatha.WarOfTheElements.Server.Services
                             // For reconciliation on client
                             playerState.LastProcessedInputSeq = input.Sequence;
 
-                            movedThisTick.Add(input.PlayerId);
-
                             //Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.ffff}] Input: Seq={input.Sequence} Vel={velocity} DTO={JsonSerializer.Serialize(input)}");
                         }
                     });
-
-                    // 1b) For players who had **no input** this tick, force horizontal speed = 0
-                    //foreach (var kvp in _gameWorld.Players)
-                    //{
-                    //    var playerState = kvp.Value;
-
-                    //    if (movedThisTick.Contains(playerState.PlayerId))
-                    //        continue;
-
-                    //    // Desired velocity = 0 => SetPlayerVelocity will zero X/Z,
-                    //    // keep Y controlled by gravity/jump logic.
-                    //    var desiredVelocity = Vector3.Zero;
-
-                    //    _physicsWorld.SetPlayerVelocity(
-                    //        playerState.PlayerId,
-                    //        desiredVelocity,
-                    //        playerState.IsFlying,
-                    //        jump: false,
-                    //        jumpImpulse: PlayerState.JumpImpulse,
-                    //        isOnGround: playerState.IsOnGround);
-                    //}
 
                     // 2) Step physics world
                     _physicsWorld.Step((float)FixedDt);

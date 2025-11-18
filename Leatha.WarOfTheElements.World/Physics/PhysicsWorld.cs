@@ -149,7 +149,6 @@ namespace Leatha.WarOfTheElements.World.Physics
                 // Fallback for very simple grounded check when sampling fails.
                 _groundY = terrain.Origin.Y;
             }
-            
         }
 
         // ---------- Player bodies ----------
@@ -275,7 +274,13 @@ namespace Leatha.WarOfTheElements.World.Physics
             }
         }
 
-        public Vector3 MovePlayerKinematic(Guid playerId, Vector3 desiredVelocity, float dt)
+        public Vector3 MovePlayerKinematic(
+            Guid playerId,
+            Vector3 desiredVelocity, // X/Z from ComputeDesiredVelocity
+            float dt,
+            bool jump,
+            bool isOnGround,
+            float jumpImpulse)
         {
             lock (_simLock)
             {
@@ -284,47 +289,34 @@ namespace Leatha.WarOfTheElements.World.Physics
 
                 var body = _simulation.Bodies.GetBodyReference(handle);
 
-                // Move position directly (ignores friction)
-                body.Pose.Position += desiredVelocity * dt;
+                // --- 1) KINEMATIC HORIZONTAL (X/Z) ---
+                var pos = body.Pose.Position;
 
-                // You can keep vertical movement as is, or clamp to ground.
-                return desiredVelocity;
+                // Only move horizontally here, Y is handled by physics
+                pos.X += desiredVelocity.X * dt;
+                pos.Z += desiredVelocity.Z * dt;
+
+                body.Pose.Position = pos;
+
+                // --- 2) DYNAMIC VERTICAL (Y) WITH JUMP ---
+                var v = body.Velocity.Linear;
+
+                // Jump: only when grounded and not already going up
+                if (jump && isOnGround && v.Y <= 0f)
+                {
+                    var oldY = v.Y;
+                    v.Y = jumpImpulse; // e.g. 7.0f
+                    Debug.WriteLine($"[JumpTest] jump={jump}, ground={isOnGround}, vYBefore={oldY:0.000}, vYAfter={v.Y:0.000}");
+                }
+
+                // Don't touch v.Y otherwise: gravity from SimplePoseIntegratorCallbacks
+                // will pull the player back down and contacts will zero it when hitting ground.
+                body.Velocity.Linear = v;
+
+                // Return the effective velocity (horizontal + vertical)
+                return new Vector3(desiredVelocity.X, v.Y, desiredVelocity.Z);
             }
         }
-
-        /// <summary>
-        /// Gets the player's pose and grounded flag (uses terrain if available).
-        /// </summary>
-        //public void GetPlayerTransform(
-        //    Guid playerId,
-        //    out Vector3 position,
-        //    out Quaternion orientation,
-        //    out bool grounded)
-        //{
-        //    if (!_playerBodies.TryGetValue(playerId, out var handle))
-        //    {
-        //        position = default;
-        //        orientation = Quaternion.Identity;
-        //        grounded = false;
-        //        return;
-        //    }
-
-        //    var body = _simulation.Bodies[handle];
-        //    position = body.Pose.Position;
-        //    orientation = body.Pose.Orientation;
-
-        //    const float groundedEpsilon = 0.1f;
-
-        //    if (_terrain != null)
-        //    {
-        //        var terrainY = SampleTerrainHeight(position.X, position.Z, _terrain);
-        //        grounded = position.Y <= terrainY + groundedEpsilon;
-        //    }
-        //    else
-        //    {
-        //        grounded = position.Y <= _groundY + groundedEpsilon;
-        //    }
-        //}
 
         public bool TryGetPlayerTransform(
             BodyHandle handle,
@@ -348,15 +340,35 @@ namespace Leatha.WarOfTheElements.World.Physics
                 position = body.Pose.Position;
                 orientation = body.Pose.Orientation;
 
-                const float groundedEpsilon = 0.1f;
+                const float groundedEpsilon = 0.05f;
 
+                // Compute the bottom of the capsule using the actual shape.
+                float bottomY = position.Y;
+
+                var shapeIndex = body.Collidable.Shape;
+                if (shapeIndex.Exists)
+                {
+                    // We know we used Capsule when adding the player.
+                    // GetShape<T>(index) returns a ref to the stored shape.
+                    ref var capsule = ref _simulation.Shapes.GetShape<Capsule>(shapeIndex.Index);
+
+                    // Capsule in Bepu is aligned along Y:
+                    // total half height from center to bottom = radius + halfLength.
+                    var totalHalfHeight = capsule.Radius + capsule.HalfLength;
+                    bottomY = position.Y - totalHalfHeight;
+                }
+
+                float surfaceY;
                 if (_terrain is { } terrain)
                 {
-                    var terrainY = SampleTerrainHeight(position.X, position.Z, terrain);
-                    grounded = position.Y <= terrainY + groundedEpsilon;
+                    surfaceY = SampleTerrainHeight(position.X, position.Z, terrain);
                 }
                 else
-                    grounded = position.Y <= _groundY + groundedEpsilon;
+                {
+                    surfaceY = _groundY;
+                }
+
+                grounded = bottomY <= surfaceY + groundedEpsilon;
 
                 return true;
             }
