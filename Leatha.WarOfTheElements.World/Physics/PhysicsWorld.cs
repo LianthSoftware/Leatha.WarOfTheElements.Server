@@ -10,6 +10,8 @@ namespace Leatha.WarOfTheElements.World.Physics
 {
     public sealed class PhysicsWorld : IDisposable
     {
+        private const float DefaultGravityY = -9.81f;
+
         public PhysicsWorld(Vector3 gravity)
         {
             _bufferPool = new BufferPool();
@@ -17,8 +19,6 @@ namespace Leatha.WarOfTheElements.World.Physics
             var narrowPhaseCallbacks = new SimpleNarrowPhaseCallbacks();
             var poseIntegratorCallbacks = new SimplePoseIntegratorCallbacks(gravity);
 
-            // Bepu 2.4.0 signature:
-            // Simulation.Create(BufferPool, TNarrowPhaseCallbacks, TPoseIntegratorCallbacks, SolveDescription)
             _simulation = Simulation.Create(
                 _bufferPool,
                 narrowPhaseCallbacks,
@@ -48,10 +48,10 @@ namespace Leatha.WarOfTheElements.World.Physics
             _bufferPool.Clear();
         }
 
-        /// <summary>
-        /// Adds a big flat box as the ground.
-        /// This keeps things simple while you wire networking and player movement.
-        /// </summary>
+        // -----------------------------------------------------------
+        //                 STATIC GEOMETRY (GROUND / TERRAIN)
+        // -----------------------------------------------------------
+
         public void AddFlatGround(float sizeX, float sizeZ, float groundY = 0f)
         {
             lock (_simLock)
@@ -69,9 +69,6 @@ namespace Leatha.WarOfTheElements.World.Physics
             }
         }
 
-        /// <summary>
-        /// Builds a static mesh from a TerrainHeightfield and adds it to the simulation.
-        /// </summary>
         public void AddTerrain(TerrainHeightfield terrain)
         {
             lock (_simLock)
@@ -142,7 +139,6 @@ namespace Leatha.WarOfTheElements.World.Physics
                 var mesh = new Mesh(triangleBuffer, new Vector3(1f, 1f, 1f), _bufferPool);
                 var meshIndex = _simulation.Shapes.Add(mesh);
 
-                // Vertices are already in world space, so origin is zero transform.
                 var staticDescription = new StaticDescription(Vector3.Zero, meshIndex);
                 _simulation.Statics.Add(staticDescription);
 
@@ -151,7 +147,9 @@ namespace Leatha.WarOfTheElements.World.Physics
             }
         }
 
-        // ---------- Player bodies ----------
+        // -----------------------------------------------------------
+        //                      PLAYER BODIES
+        // -----------------------------------------------------------
 
         public BodyHandle AddPlayer(Guid playerId, Vector3 startPosition, float radius = 0.5f, float halfHeight = 0.9f)
         {
@@ -160,11 +158,11 @@ namespace Leatha.WarOfTheElements.World.Physics
                 if (_playerBodies.TryGetValue(playerId, out var player))
                     return player;
 
-                // Capsule character (like a FPS controller).
-                // Capsule(radius, length). length ~= cylinder height between the caps.
+                // Capsule character (like an FPS controller).
                 var capsule = new Capsule(radius, halfHeight * 2f);
-                //var inertia = capsule.ComputeInertia(1f); // mass = 1
 
+                // We treat this body as "kinematic-like": we drive its pose ourselves,
+                // so we don't really care about its dynamic inertia.
                 var inertia = new BodyInertia
                 {
                     InverseMass = 1f,
@@ -193,17 +191,12 @@ namespace Leatha.WarOfTheElements.World.Physics
                 if (!_playerBodies.TryGetValue(playerId, out var handle))
                     return;
 
-                // 1) Grab the shape index *before* removing the body
                 var body = _simulation.Bodies[handle];
                 var shapeIndex = body.Collidable.Shape;
 
-                // 2) Remove body from the simulation
                 _simulation.Bodies.Remove(handle);
-
-                // 3) Now it’s safe to remove the shape (since no body uses it anymore)
                 _simulation.Shapes.Remove(shapeIndex);
 
-                // 4) Remove from dictionary
                 _playerBodies.Remove(playerId);
             }
         }
@@ -217,107 +210,100 @@ namespace Leatha.WarOfTheElements.World.Physics
         }
 
         /// <summary>
-        /// Sets the horizontal velocity, and optionally vertical component for flying/jump.
-        /// Does not stomp vertical velocity in grounded mode, so gravity works.
+        /// Kinematic character controller:
+        /// - X/Z controlled directly from desiredVelocity
+        /// - Y controlled by gameplay velocity + jump + manual gravity
+        /// - Resulting position is clamped against terrain/flat ground
+        /// 
+        /// currentVelocity is your gameplay PlayerState.Velocity.
+        /// The returned Vector3 is the updated gameplay velocity.
         /// </summary>
-        public Vector3 SetPlayerVelocity(
-            Guid playerId,
-            Vector3 desiredVelocity,
-            bool isFlying,
-            bool jump,
-            float jumpImpulse,
-            bool isOnGround)
-        {
-            lock (_simLock)
-            {
-                if (!_playerBodies.TryGetValue(playerId, out var handle))
-                    return Vector3.Zero;
-
-                var body = _simulation.Bodies.GetBodyReference(handle);
-
-                var v = body.Velocity.Linear;
-
-                // Always control horizontal movement
-                v.X = desiredVelocity.X;
-                v.Z = desiredVelocity.Z;
-
-                if (isFlying)
-                {
-                    // Full control in Y when flying
-                    v.Y = desiredVelocity.Y;
-                }
-                else
-                {
-                    // Only apply jump impulse when grounded;
-                    // let gravity (from pose integrator callbacks) handle the rest.
-                    if (jump && isOnGround)
-                    {
-                        v.Y = jumpImpulse;
-                    }
-                }
-
-                body.Velocity.Linear = v;
-
-                return body.Velocity.Linear;
-            }
-        }
-
-        public Vector3 GetPlayerVelocity(Guid playerId)
-        {
-            lock (_simLock)
-            {
-                if (!_playerBodies.TryGetValue(playerId, out var handle))
-                    return Vector3.Zero;
-
-                var body = _simulation.Bodies[handle];
-                return body.Velocity.Linear;
-            }
-        }
-
         public Vector3 MovePlayerKinematic(
             Guid playerId,
-            Vector3 desiredVelocity, // X/Z from ComputeDesiredVelocity
+            Vector3 currentVelocity,
+            Vector3 desiredVelocity, // X/Z from ComputeDesiredVelocity (desired horizontal speed)
             float dt,
             bool jump,
             bool isOnGround,
-            float jumpImpulse)
+            float jumpImpulse,
+            float gravityY = DefaultGravityY)
         {
             lock (_simLock)
             {
                 if (!_playerBodies.TryGetValue(playerId, out var handle))
-                    return Vector3.Zero;
+                    return currentVelocity;
 
                 var body = _simulation.Bodies.GetBodyReference(handle);
 
-                // --- 1) KINEMATIC HORIZONTAL (X/Z) ---
                 var pos = body.Pose.Position;
 
-                // Only move horizontally here, Y is handled by physics
-                pos.X += desiredVelocity.X * dt;
-                pos.Z += desiredVelocity.Z * dt;
+                // Start from gameplay velocity (not Bepu's internal velocity).
+                var v = currentVelocity;
 
-                body.Pose.Position = pos;
-
-                // --- 2) DYNAMIC VERTICAL (Y) WITH JUMP ---
-                var v = body.Velocity.Linear;
-
-                // Jump: only when grounded and not already going up
-                if (jump && isOnGround && v.Y <= 0f)
+                // --- 1) Horizontal: directly follow desired X/Z ---
+                if (isOnGround)
                 {
-                    var oldY = v.Y;
-                    v.Y = jumpImpulse; // e.g. 7.0f
-                    Debug.WriteLine($"[JumpTest] jump={jump}, ground={isOnGround}, vYBefore={oldY:0.000}, vYAfter={v.Y:0.000}");
+                    v.X = desiredVelocity.X;
+                    v.Z = desiredVelocity.Z;
                 }
 
-                // Don't touch v.Y otherwise: gravity from SimplePoseIntegratorCallbacks
-                // will pull the player back down and contacts will zero it when hitting ground.
-                body.Velocity.Linear = v;
+                // --- 2) Vertical: jump + gravity ---
+                if (jump && isOnGround && v.Y <= 0f)
+                {
+                    v.Y = jumpImpulse;
+                    Debug.WriteLine(
+                        $"[Jump] jump={jump}, onGround={isOnGround}, new vY={v.Y:0.000}");
+                }
 
-                // Return the effective velocity (horizontal + vertical)
-                return new Vector3(desiredVelocity.X, v.Y, desiredVelocity.Z);
+                // Apply manual gravity
+                v.Y += gravityY * dt;
+
+                // --- 3) Integrate position with full velocity ---
+                pos += v * dt;
+
+                // --- 4) Clamp against ground (terrain or flat) ---
+                float surfaceY;
+                if (_terrain is { } terrain)
+                {
+                    surfaceY = SampleTerrainHeight(pos.X, pos.Z, terrain);
+                }
+                else
+                {
+                    surfaceY = _groundY;
+                }
+
+                // Compute capsule bottom offset from center
+                float bottomOffset = 0f;
+                var shapeIndex = body.Collidable.Shape;
+                if (shapeIndex.Exists)
+                {
+                    ref var capsule = ref _simulation.Shapes.GetShape<Capsule>(shapeIndex.Index);
+                    var totalHalfHeight = capsule.Radius + capsule.HalfLength;
+                    bottomOffset = totalHalfHeight;
+                }
+
+                var bottomY = pos.Y - bottomOffset;
+                if (bottomY < surfaceY)
+                {
+                    var delta = surfaceY - bottomY;
+                    pos.Y += delta;
+                    v.Y = 0f; // landed
+                }
+
+                // --- 5) Write back to simulation ---
+                body.Pose.Position = pos;
+
+                // We don't use Bepu's dynamic velocity for this character.
+                // Zero it so gravity from the pose integrator doesn't influence pose.
+                body.Velocity.Linear = Vector3.Zero;
+
+                return v;
             }
         }
 
+        /// <summary>
+        /// Tries to get the player's pose and a grounded flag derived from terrain/flat ground.
+        /// </summary>
         public bool TryGetPlayerTransform(
             BodyHandle handle,
             out Vector3 position,
@@ -348,12 +334,8 @@ namespace Leatha.WarOfTheElements.World.Physics
                 var shapeIndex = body.Collidable.Shape;
                 if (shapeIndex.Exists)
                 {
-                    // We know we used Capsule when adding the player.
-                    // GetShape<T>(index) returns a ref to the stored shape.
                     ref var capsule = ref _simulation.Shapes.GetShape<Capsule>(shapeIndex.Index);
 
-                    // Capsule in Bepu is aligned along Y:
-                    // total half height from center to bottom = radius + halfLength.
                     var totalHalfHeight = capsule.Radius + capsule.HalfLength;
                     bottomY = position.Y - totalHalfHeight;
                 }
@@ -385,7 +367,6 @@ namespace Leatha.WarOfTheElements.World.Physics
             var width = heights.GetLength(0);
             var height = heights.GetLength(1);
 
-            // Clamp to valid range
             var x0 = (int)MathF.Floor(localX);
             var z0 = (int)MathF.Floor(localZ);
 
@@ -403,7 +384,6 @@ namespace Leatha.WarOfTheElements.World.Physics
             var h01 = heights[x0, z1];
             var h11 = heights[x1, z1];
 
-            // Bilinear interpolation
             var h0 = h00 + (h10 - h00) * tx;
             var h1 = h01 + (h11 - h01) * tx;
             var h = h0 + (h1 - h0) * tz;

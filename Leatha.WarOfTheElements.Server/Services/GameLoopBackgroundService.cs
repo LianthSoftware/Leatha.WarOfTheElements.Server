@@ -46,7 +46,7 @@ namespace Leatha.WarOfTheElements.Server.Services
 
                 while (accumulator >= FixedDt)
                 {
-                    // 1) Process all queued inputs – remember who moved
+                    // 1) Process all queued inputs
                     _inputQueue.Drain(inputs =>
                     {
                         foreach (var input in inputs)
@@ -58,46 +58,40 @@ namespace Leatha.WarOfTheElements.Server.Services
                             if (input.Jump)
                                 Debug.WriteLine("Input JUMP");
 
+                            // Compute desired *horizontal* velocity from input.
+                            // Y is controlled by our kinematic controller (jump + gravity).
                             var desiredVelocity = playerState.ComputeDesiredVelocity(input, FixedDt);
 
-                            // Combine kinematic horizontal + dynamic vertical (jump)
-                            var velocity = _physicsWorld.MovePlayerKinematic(
+                            // Combine kinematic horizontal + kinematic vertical (jump + gravity).
+                            // We treat playerState.Velocity as the authoritative gameplay velocity.
+                            var newVelocity = _physicsWorld.MovePlayerKinematic(
                                 input.PlayerId,
-                                desiredVelocity,
+                                playerState.Velocity,   // current gameplay velocity
+                                desiredVelocity,        // desired horizontal (X/Z)
                                 (float)FixedDt,
                                 input.Jump,
-                                playerState.IsOnGround,
+                                playerState.IsOnGround, // grounded from previous tick
                                 PlayerState.JumpImpulse);
 
-                            if (velocity.Y > 0)
-                                Debug.WriteLine("Velocity Y > 0");
+                            playerState.Velocity = newVelocity;
 
-                            //var velocity = _physicsWorld.SetPlayerVelocity(
-                            //    input.PlayerId,
-                            //    desiredVelocity,
-                            //    playerState.IsFlying,
-                            //    input.Jump,
-                            //    PlayerState.JumpImpulse,
-                            //    playerState.IsOnGround);
+                            if (newVelocity.Y > 0)
+                                Debug.WriteLine("Velocity Y > 0 (jump applied)");
 
                             Debug.WriteLine(
                                 $"[{DateTime.Now:HH:mm:ss.ffff}] Input: Seq={input.Sequence} " +
                                 $"Desired=<{desiredVelocity.X:0.000},{desiredVelocity.Y:0.000},{desiredVelocity.Z:0.000}> " +
-                                $"Vel=<{velocity.X:0.000},{velocity.Y:0.000},{velocity.Z:0.000}>");
-
-                            //Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.ffff}] Input: Seq={input.Sequence} Vel={velocity}");
+                                $"Vel=<{newVelocity.X:0.000},{newVelocity.Y:0.000},{newVelocity.Z:0.000}>");
 
                             // For reconciliation on client
                             playerState.LastProcessedInputSeq = input.Sequence;
-
-                            //Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.ffff}] Input: Seq={input.Sequence} Vel={velocity} DTO={JsonSerializer.Serialize(input)}");
                         }
                     });
 
-                    // 2) Step physics world
+                    // 2) Step physics world (other dynamics, contacts, etc.)
                     _physicsWorld.Step((float)FixedDt);
 
-                    // 3) Sync PlayerState from physics
+                    // 3) Sync PlayerState from physics (position/orientation + grounded flag)
                     foreach (var kvp in _gameWorld.Players)
                     {
                         var playerState = kvp.Value;
@@ -113,17 +107,15 @@ namespace Leatha.WarOfTheElements.Server.Services
                         }
 
                         playerState.Position = position;
-                        playerState.Velocity = _physicsWorld.GetPlayerVelocity(playerState.PlayerId);
+                        // NOTE: Velocity is managed by our kinematic controller;
+                        // do NOT overwrite it with Bepu's internal velocity here.
                         playerState.IsOnGround = grounded;
 
                         playerState.Orientation =
                             Quaternion.CreateFromAxisAngle(Vector3.UnitY, playerState.Yaw);
 
-                        Debug.WriteLine($"[PostStep] Pos={playerState.Position} Vel={playerState.Velocity} Grounded={grounded}");
-
-                        //Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.ffff}] State: Position = { playerState.Position } | Velocity = { playerState.Velocity } | Orientation = { playerState.Orientation }");
-
-                        //Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.ffff}] State: {JsonSerializer.Serialize(playerState)}");
+                        Debug.WriteLine(
+                            $"[PostStep] Pos={playerState.Position} Vel={playerState.Velocity} Grounded={grounded}");
                     }
 
                     tick++;
