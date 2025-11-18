@@ -7,6 +7,8 @@ namespace Leatha.WarOfTheElements.Common.Communication.Services
 {
     public interface IClientToServerHandler
     {
+        Task<TransferMessage<List<PlayerObject>>> GetCharacterList(Guid accountId);
+
         Task<TransferMessage<PlayerStateObject>> EnterWorld(Guid playerId); // #TODO: Server Id?
 
         Task<TransferMessage> ExitWorld(Guid playerId);

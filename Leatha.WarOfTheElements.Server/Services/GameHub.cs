@@ -69,6 +69,11 @@ namespace Leatha.WarOfTheElements.Server.Services
         }
 
 
+        public Task<TransferMessage<List<PlayerObject>>> GetCharacterList(Guid accountId)
+        {
+            throw new NotImplementedException();
+        }
+
         public async Task<TransferMessage<PlayerStateObject>> EnterWorld(Guid playerId)
         {
             var playerResult = await _playerService.GetPlayerAsync(playerId);

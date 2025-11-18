@@ -25,7 +25,7 @@ namespace Leatha.WarOfTheElements.Server.Controllers
         //[ProducesResponseType(typeof(NotFoundResult), StatusCodes.Status404NotFound)]
         public async Task<IActionResult> SignUp([FromBody] SignupRequest request)
         {
-            var response = await _authService.CreatePlayerAsync(request);
+            var response = await _authService.CreateAccountAsync(request);
             return response.Match<IActionResult>(
                 Ok,
                 failed => BadRequest(failed.MapToResponse()));
@@ -60,7 +60,7 @@ namespace Leatha.WarOfTheElements.Server.Controllers
         [ProducesResponseType(typeof(NotFoundResult), StatusCodes.Status401Unauthorized)]
         public async Task<IActionResult> RefreshTokenAsync([FromBody] RefreshTokenRequest request)
         {
-            var response = await _authService.RefreshTokenAsync(request.PlayerId, request.RefreshToken);
+            var response = await _authService.RefreshTokenAsync(request.AccountId, request.RefreshToken);
             return response.Match<IActionResult>(
                 Ok,
                 Unauthorized);

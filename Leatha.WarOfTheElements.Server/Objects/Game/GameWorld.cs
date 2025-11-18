@@ -33,6 +33,8 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
 
         public ConcurrentDictionary<Guid, PlayerState> Players { get; } = new();
 
+        //public ConcurrentDictionary<Guid, NonPlayerState> NonPlayers { get; } = new();
+
         private readonly IGameHubService _gameHubService;
         private readonly PhysicsWorld _physicsWorld;
         private readonly IPlayerService _playerService;

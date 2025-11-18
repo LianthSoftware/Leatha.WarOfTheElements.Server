@@ -6,8 +6,8 @@ namespace Leatha.WarOfTheElements.Common.Communication.Messages.Responses
     public sealed class LoginResponse
     {
         [Required]
-        [JsonPropertyName("playerId")]
-        public Guid PlayerId { get; set; }
+        [JsonPropertyName("accountId")]
+        public Guid AccountId { get; set; }
 
         [Required]
         [JsonPropertyName("email")]

@@ -2,12 +2,11 @@
 using BepuPhysics;
 using Leatha.WarOfTheElements.Common.Communication.Transfer;
 using System.Numerics;
-using Leatha.WarOfTheElements.Server.DataAccess.Entities;
 using MongoDB.Bson.Serialization.Attributes;
 using Newtonsoft.Json;
 using Leatha.WarOfTheElements.Common.Communication.Messages;
 
-namespace Leatha.WarOfTheElements.Server.Objects.Game
+namespace Leatha.WarOfTheElements.Server.DataAccess.Entities
 {
     public sealed class PlayerState : MongoEntity
     {

@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.Numerics;
 using System.Text.Json;
 using Leatha.WarOfTheElements.Common.Communication.Messages;
+using Leatha.WarOfTheElements.Server.DataAccess.Entities;
 
 namespace Leatha.WarOfTheElements.Server.Services
 {

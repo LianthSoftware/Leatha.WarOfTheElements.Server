@@ -2,7 +2,6 @@
 using Leatha.WarOfTheElements.Server.DataAccess.Entities;
 using Leatha.WarOfTheElements.Server.DataAccess.Entities.Templates;
 using Leatha.WarOfTheElements.Server.Demo;
-using Leatha.WarOfTheElements.Server.Objects.Game;
 
 namespace Leatha.WarOfTheElements.Server.Utilities
 {
@@ -12,9 +11,14 @@ namespace Leatha.WarOfTheElements.Server.Utilities
         {
             return new PlayerObject
             {
+                AccountId = entity.AccountId,
                 PlayerId = entity.PlayerId,
                 PlayerName = entity.PlayerName,
-                Created = entity.Created
+                Level = entity.Level,
+                Created = entity.Created,
+                PrimaryElementType = entity.PrimaryElementType,
+                SecondaryElementType = entity.SecondaryElementType,
+                TertiaryElementType = entity.TertiaryElementType
             };
         }
 

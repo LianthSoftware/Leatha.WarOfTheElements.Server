@@ -1,7 +1,6 @@
 ﻿using System.Numerics;
 using Leatha.WarOfTheElements.Common.Communication.Messages;
 using Leatha.WarOfTheElements.Server.DataAccess.Entities;
-using Leatha.WarOfTheElements.Server.Objects.Game;
 using Leatha.WarOfTheElements.Server.Objects.Validations;
 using Leatha.WarOfTheElements.Server.Utilities;
 using MongoDB.Driver;

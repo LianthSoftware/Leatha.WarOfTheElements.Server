@@ -17,20 +17,18 @@ namespace Leatha.WarOfTheElements.Server.Services
 {
     public interface IAuthService
     {
-        //Task<AuthLoginResult> AuthenticateAsync(string email, string password);
-
-        Task<OneOf<LoginResponse, ValidationFailed>> CreatePlayerAsync(SignupRequest request);
+        Task<OneOf<LoginResponse, ValidationFailed>> CreateAccountAsync(SignupRequest request);
 
         Task<OneOf<LoginResponse, ValidationFailed>> AuthenticateAsync(LoginRequest request);
 
-        Task<bool> RevokeRefreshTokenAsync(Guid playerId, string? refreshToken);
+        Task<bool> RevokeRefreshTokenAsync(Guid accountId, string? refreshToken);
 
-        Task<OneOf<RefreshTokenResponse, ObjectNotFound>> RefreshTokenAsync(Guid playerId, string refreshToken);
+        Task<OneOf<RefreshTokenResponse, ObjectNotFound>> RefreshTokenAsync(Guid accountId, string refreshToken);
 
         Task<ValidateTokenResponse> ValidateTokenAsync(string token);
     }
 
-    public class AuthService : IAuthService
+    public sealed class AuthService : IAuthService
     {
         public AuthService(IMongoClient mongoClient, IConfiguration configuration)
         {
@@ -44,7 +42,7 @@ namespace Leatha.WarOfTheElements.Server.Services
         private readonly IMongoDatabase _mongoAuthDatabase;
         //private readonly IMongoDatabase _mongoGameDatabase;
 
-        public async Task<OneOf<LoginResponse, ValidationFailed>> CreatePlayerAsync(SignupRequest request)
+        public async Task<OneOf<LoginResponse, ValidationFailed>> CreateAccountAsync(SignupRequest request)
         {
             //var validator = new CreateAccountRequestValidator();
             //var validationResult = await validator.ValidateAsync(request);
@@ -54,41 +52,38 @@ namespace Leatha.WarOfTheElements.Server.Services
             //    return new ValidationFailed(validationResult.Errors);
             //}
 
-            var playerFilter = Builders<Player>.Filter.Eq(i => i.Email, request.Email.ToLower());
-            //& Builders<Player>.Filter.Eq(i => i.ServerId, request.ServerId);
-
-            var player = await _mongoAuthDatabase.GetCollection<Player>(nameof(Player))
-                .Find(playerFilter)
+            var accountFilter = Builders<Account>.Filter.Eq(i => i.Email, request.Email.ToLower());
+            var account = await _mongoAuthDatabase.GetMongoCollection<Account>()
+                .Find(accountFilter)
                 .SingleOrDefaultAsync();
 
-            if (player != null)
+            if (account != null)
             {
                 // Not Found.
-                return new ValidationFailed(new ValidationFailure(nameof(player), "Player already exists."));
+                return new ValidationFailed(new ValidationFailure(nameof(account), "Account already exists."));
             }
 
             var salt = GenerateSalt();
             var hashedPassword = HashPassword(request.Password, salt, true);
 
-            player = new Player
+            account = new Account
             {
-                PlayerId = Guid.NewGuid(),
+                AccountId = Guid.NewGuid(),
                 Email = request.Email,
                 Created = DateTime.UtcNow,
                 PasswordHash = hashedPassword,
-                PlayerName = request.PlayerName,
             };
 
-            await _mongoAuthDatabase.GetCollection<Player>(nameof(Player)).InsertOneAsync(player);
+            await _mongoAuthDatabase.GetMongoCollection<Account>().InsertOneAsync(account);
 
-            var token = GenerateJwtToken(player);
-            var refreshToken = await GenerateRefreshTokenAsync(player.PlayerId);
+            var token = GenerateJwtToken(account);
+            var refreshToken = await GenerateRefreshTokenAsync(account.AccountId);
 
             var loginResponse = new LoginResponse
             {
-                PlayerId = player.PlayerId,
-                Email = player.Email,
-                Created = player.Created,
+                AccountId = account.AccountId,
+                Email = account.Email,
+                Created = account.Created,
                 //PlayerStatus = account.PlayerStatus,
                 AccessToken = token,
                 RefreshToken = refreshToken?.Token
@@ -107,35 +102,35 @@ namespace Leatha.WarOfTheElements.Server.Services
                 return new ValidationFailed(validationResult.Errors.Select(i => new ValidationFailure(i.PropertyName, i.ErrorMessage)).ToList());
             }
 
-            var playerFilter = Builders<Player>.Filter.Eq(i => i.Email, request.Email.ToLower());
+            var accountFilter = Builders<Account>.Filter.Eq(i => i.Email, request.Email.ToLower());
                                //& Builders<Player>.Filter.Eq(i => i.ServerId, request.ServerId);
 
-            var player = await _mongoAuthDatabase.GetCollection<Player>(nameof(Player))
-                .Find(playerFilter)
+            var account = await _mongoAuthDatabase.GetMongoCollection<Account>()
+                .Find(accountFilter)
                 .SingleOrDefaultAsync();
 
-            if (player == null)
+            if (account == null)
             {
                 // Not Found.
-                return new ValidationFailed(new ValidationFailure(nameof(player), "Player was not found."));
+                return new ValidationFailed(new ValidationFailure(nameof(account), "Account was not found."));
             }
 
-            if (!Verify(request.Password, player.PasswordHash, true))
+            if (!Verify(request.Password, account.PasswordHash, true))
             {
                 // Unauthorized.
                 return new ValidationFailed(new ValidationFailure(nameof(request.Password), "Password is incorrect."));
             }
 
-            var token = GenerateJwtToken(player);
+            var token = GenerateJwtToken(account);
             RefreshToken? refreshToken = null;
             if (request.RememberMe)
-                refreshToken = await GenerateRefreshTokenAsync(player.PlayerId);
+                refreshToken = await GenerateRefreshTokenAsync(account.AccountId);
 
             var loginResponse = new LoginResponse
             {
-                PlayerId = player.PlayerId,
-                Email = player.Email,
-                Created = player.Created,
+                AccountId = account.AccountId,
+                Email = account.Email,
+                Created = account.Created,
                 //PlayerStatus = account.PlayerStatus,
                 AccessToken = token,
                 RefreshToken = refreshToken?.Token
@@ -144,10 +139,10 @@ namespace Leatha.WarOfTheElements.Server.Services
             return loginResponse;
         }
 
-        public async Task<bool> RevokeRefreshTokenAsync(Guid playerId, string? refreshToken)
+        public async Task<bool> RevokeRefreshTokenAsync(Guid accountId, string? refreshToken)
         {
             // Search by default by player id.
-            var filter = Builders<RefreshToken>.Filter.Eq(i => i.PlayerId, playerId);
+            var filter = Builders<RefreshToken>.Filter.Eq(i => i.AccountId, accountId);
 
             // If refresh token specified, add it to search.
             if (!String.IsNullOrWhiteSpace(refreshToken))
@@ -158,21 +153,21 @@ namespace Leatha.WarOfTheElements.Server.Services
             return result.DeletedCount > 0;
         }
 
-        public async Task<OneOf<RefreshTokenResponse, ObjectNotFound>> RefreshTokenAsync(Guid playerId, string refreshToken)
+        public async Task<OneOf<RefreshTokenResponse, ObjectNotFound>> RefreshTokenAsync(Guid accountId, string refreshToken)
         {
-            var playerFilter = Builders<Player>.Filter.Eq(i => i.PlayerId, playerId);
+            var accountFilter = Builders<Account>.Filter.Eq(i => i.AccountId, accountId);
 
-            var player = await _mongoAuthDatabase.GetCollection<Player>(nameof(Player))
-                .Find(playerFilter)
+            var account = await _mongoAuthDatabase.GetMongoCollection<Account>()
+                .Find(accountFilter)
                 .SingleOrDefaultAsync();
 
-            if (player == null)
+            if (account == null)
             {
                 // Not Found.
-                return new ObjectNotFound(nameof(player), $"Player (\"{playerId}\") was not found.");
+                return new ObjectNotFound(nameof(account), $"Account (\"{ accountId }\") was not found.");
             }
 
-            var tokenFilter = Builders<RefreshToken>.Filter.Eq(i => i.PlayerId, playerId) &
+            var tokenFilter = Builders<RefreshToken>.Filter.Eq(i => i.AccountId, accountId) &
                          Builders<RefreshToken>.Filter.Eq(i => i.Token, refreshToken);
 
             var token = await _mongoAuthDatabase.GetCollection<RefreshToken>(nameof(RefreshToken))
@@ -189,9 +184,9 @@ namespace Leatha.WarOfTheElements.Server.Services
                 return new ObjectNotFound(nameof(token), "Refresh token is expired."); // #TODO:Unauthorized
             }
 
-            await RevokeRefreshTokenAsync(playerId, refreshToken);
-            var newRefreshToken = await GenerateRefreshTokenAsync(playerId);
-            var newAccessToken = GenerateJwtToken(player);
+            await RevokeRefreshTokenAsync(accountId, refreshToken);
+            var newRefreshToken = await GenerateRefreshTokenAsync(accountId);
+            var newAccessToken = GenerateJwtToken(account);
 
             return new RefreshTokenResponse
             {
@@ -232,17 +227,17 @@ namespace Leatha.WarOfTheElements.Server.Services
             };
         }
 
-        private string GenerateJwtToken(Player player)
+        private string GenerateJwtToken(Account account)
         {
             var tokenHandler = new JwtSecurityTokenHandler();
             var key = Encoding.ASCII.GetBytes(_configuration["JwtSettings:Secret"]!);
 
             var claims = new List<Claim>
             {
-                new Claim("player_id", player.PlayerId.ToString()),
-                new Claim(ClaimTypes.Email, player.Email),
-                new Claim(ClaimTypes.NameIdentifier, player.Email),
-                new Claim(ClaimTypes.Name, player.Email),
+                new Claim("account_id", account.AccountId.ToString()),
+                new Claim(ClaimTypes.Email, account.Email),
+                new Claim(ClaimTypes.NameIdentifier, account.Email),
+                new Claim(ClaimTypes.Name, account.Email),
                 new Claim(ClaimTypes.Role, "Player") // #TODO
             };
 
@@ -258,19 +253,19 @@ namespace Leatha.WarOfTheElements.Server.Services
             return tokenHandler.WriteToken(token);
         }
 
-        private async Task<RefreshToken> GenerateRefreshTokenAsync(Guid? playerId)
+        private async Task<RefreshToken> GenerateRefreshTokenAsync(Guid accountId)
         {
             var randomBytes = RandomNumberGenerator.GetBytes(64);
 
             var refreshToken = new RefreshToken
             {
-                PlayerId = playerId,
+                AccountId = accountId,
                 Token = Convert.ToBase64String(randomBytes),
                 Expires = DateTime.UtcNow.AddMonths(1), // #TODO: Config?
                 Created = DateTime.UtcNow,
             };
 
-            var collection = _mongoAuthDatabase.GetCollection<RefreshToken>(nameof(RefreshToken));
+            var collection = _mongoAuthDatabase.GetMongoCollection<RefreshToken>();
             await collection.InsertOneAsync(refreshToken);
 
             return refreshToken;

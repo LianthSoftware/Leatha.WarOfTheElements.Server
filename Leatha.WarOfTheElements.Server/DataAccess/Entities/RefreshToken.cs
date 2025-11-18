@@ -8,8 +8,6 @@ namespace Leatha.WarOfTheElements.Server.DataAccess.Entities
         [Required]
         public Guid AccountId { get; set; }
 
-        public Guid? PlayerId { get; set; }
-
         [Required]
         public string Token { get; set; } = null!;
 
