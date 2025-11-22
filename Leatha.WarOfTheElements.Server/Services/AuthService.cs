@@ -210,19 +210,19 @@ namespace Leatha.WarOfTheElements.Server.Services
 
             var result = await new JwtSecurityTokenHandler().ValidateTokenAsync(token, tokenValidationParameters);
 
-            var playerId = Guid.Empty;
+            var accountId = Guid.Empty;
             if (result.IsValid)
             {
-                var playerIdClaim = result.Claims["player_id"];
-                if (String.IsNullOrWhiteSpace(playerIdClaim?.ToString()))
+                var accountIdClaim = result.Claims["account_id"];
+                if (String.IsNullOrWhiteSpace(accountIdClaim?.ToString()))
                     return new ValidateTokenResponse { IsTokenValid = false };
 
-                playerId = Guid.Parse(playerIdClaim.ToString()!);
+                accountId = Guid.Parse(accountIdClaim.ToString()!);
             }
 
             return new ValidateTokenResponse
             {
-                PlayerId = playerId,
+                AccountId = accountId,
                 IsTokenValid = result.IsValid
             };
         }
@@ -245,7 +245,8 @@ namespace Leatha.WarOfTheElements.Server.Services
             {
                 Subject = new ClaimsIdentity(claims),
                 //Expires = DateTime.UtcNow.AddHours(1), // #TODO: Config?
-                Expires = DateTime.UtcNow.AddDays(1), // #TODO: Config?
+                //Expires = DateTime.UtcNow.AddDays(1), // #TODO: Config?
+                Expires = DateTime.UtcNow.AddMonths(1), // #TODO: Config?
                 SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
             };
 

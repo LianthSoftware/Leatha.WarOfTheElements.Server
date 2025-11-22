@@ -7,5 +7,7 @@
         public List<int> LearntSpells { get; set; } = [];
 
         public List<int> LearntEnhancements { get; set; } = [];
+
+        public List<int> SpellBarSpells { get; set; } = [];
     }
 }

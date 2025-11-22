@@ -5,16 +5,31 @@ using System.Numerics;
 using MongoDB.Bson.Serialization.Attributes;
 using Newtonsoft.Json;
 using Leatha.WarOfTheElements.Common.Communication.Messages;
+using Leatha.WarOfTheElements.Common.Communication.Transfer.Enums;
+using Leatha.WarOfTheElements.Server.Objects.Characters;
 
 namespace Leatha.WarOfTheElements.Server.DataAccess.Entities
 {
-    public sealed class PlayerState : MongoEntity
+    public sealed class PlayerState : MongoEntity, ICharacterState
     {
+        public Guid AccountId { get; set; }
+
         public Guid PlayerId { get; init; }
+
+        public string CharacterName { get; set; } = null!;
+
+        public int CharacterLevel { get; set; }
+
+        [BsonIgnore]
+        public WorldObjectId WorldObjectId { get; private set; }
 
         public int MapId { get; set; }
 
         public Guid? InstanceId { get; set; }
+
+        public CharacterResourceObject Resources { get; set; } = new();
+
+        public List<AuraObject> Auras { get; set; } = [];
 
         [BsonIgnore]
         [JsonIgnore]
@@ -24,6 +39,7 @@ namespace Leatha.WarOfTheElements.Server.DataAccess.Entities
 
         public Quaternion Orientation { get; set; }
 
+        [BsonIgnore]
         public Vector3 Velocity { get; set; }
 
         public float Yaw { get; set; }
@@ -39,44 +55,32 @@ namespace Leatha.WarOfTheElements.Server.DataAccess.Entities
         [BsonIgnore]
         public int LastProcessedInputSeq { get; set; }
 
-        // Snapshot of latest input from this player (not persisted).
-        [BsonIgnore]
-        [JsonIgnore]
-        public PlayerInputObject? CurrentInput { get; set; } = new ();
-
-        // One-shot jump flag, consumed by game loop.
-        [BsonIgnore]
-        public bool PendingJump { get; set; }
-
         public const float WalkSpeed = 5f;
         public const float SprintMultiplier = 1.8f;
         public const float FlySpeed = 8f;
         public const float JumpImpulse = 7f;
 
-        [BsonIgnore]
-        public string PositionString => $"({Position.X}, {Position.Y}, {Position.Z})";
-
-        [BsonIgnore]
-        public string VelocityString => $"({Velocity.X}, {Velocity.Y}, {Velocity.Z})";
-
-        [BsonIgnore]
-        public string OrientationString => $"({Orientation.X}, {Orientation.Y}, {Orientation.Z})";
-
         public PlayerState()
         {
         }
 
-        public PlayerState(Guid playerId, Vector3 position)
+        public PlayerState(Guid accountId, Guid playerId, Vector3 position)
         {
+            AccountId = accountId;
             PlayerId = playerId;
             Position = position;
+
+            WorldObjectId = new WorldObjectId(playerId, WorldObjectType.Player);
         }
 
-        public PlayerState(Guid playerId, Vector3 position, Quaternion orientation)
+        public PlayerState(Guid accountId, Guid playerId, Vector3 position, Quaternion orientation)
         {
+            AccountId = accountId;
             PlayerId = playerId;
             Position = position;
             Orientation = orientation;
+
+            WorldObjectId = new WorldObjectId(playerId, WorldObjectType.Player);
         }
 
         public void SetPhysicsBody(BodyHandle bodyHandle)
@@ -84,7 +88,12 @@ namespace Leatha.WarOfTheElements.Server.DataAccess.Entities
             Body = bodyHandle;
         }
 
-        /// <summary>
+        public void SetObjectId(Guid playerId)
+        {
+            WorldObjectId = new WorldObjectId(playerId, WorldObjectType.Player);
+        }
+
+    /// <summary>
         /// Computes desired velocity from input. PhysicsWorld applies it to the body.
         /// </summary>
         public Vector3 ComputeDesiredVelocity(PlayerInputObject input, double dt)

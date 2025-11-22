@@ -20,5 +20,7 @@ namespace Leatha.WarOfTheElements.Common.Communication.Messages
         public Guid? InstanceId { get; set; }
 
         public List<PlayerStateObject> Players { get; set; } = [];
+
+        public List<NonPlayerStateObject> NonPlayers { get; set; } = [];
     }
 }

@@ -8,5 +8,13 @@ namespace Leatha.WarOfTheElements.Common.Communication.Services
         //Task SendSnapshot(WorldSnapshotMessage message);
 
         Task SendSnapshot(WorldSnapshotMessage message, CancellationToken cancellationToken);
+
+        Task SendSpellStart(SpellObject spellObject, ICharacterStateObject caster);
+
+        Task SendSpellFinished(SpellObject spellObject, ICharacterStateObject caster);
+
+        Task SendAuraApply(AuraObject auraObject, ICharacterStateObject target);
+
+        Task SendAuraRemove(AuraObject auraObject, ICharacterStateObject target);
     }
 }

@@ -143,10 +143,21 @@ namespace Leatha.WarOfTheElements.Server
                 services.AddSingleton<ITemplateService, TemplateService>();
 
                 services.AddSingleton<IPlayerService, PlayerService>();
+                services.AddSingleton<IScriptService, ScriptService>(sp =>
+                {
+                    var templateService = sp.GetRequiredService<ITemplateService>();
+                    var scriptService = new ScriptService(templateService);
+
+                    scriptService.LoadNonPlayerScripts();
+                    scriptService.LoadSpellScripts();
+                    scriptService.LoadAuraScripts();
+
+                    return scriptService;
+                });
 
                 services.AddSingleton<IInputQueueService, InputQueueService>();
                 services.AddSingleton<IGameWorld, GameWorld>();
-                services.AddSingleton<PhysicsWorld>(_ =>
+                services.AddSingleton<PhysicsWorld>(sp =>
                 {
                     var gravity = new Vector3(0, -9.81f, 0);
                     var physicsWorld = new PhysicsWorld(gravity);
@@ -156,6 +167,7 @@ namespace Leatha.WarOfTheElements.Server
                     var heightPath = configuration["Terrain:HeightmapPath"];
                     var maxHeight = configuration.GetValue("Terrain:MaxHeight", 100f);
 
+                    // #TODO: There must be foreach for different maps later.
                     if (!string.IsNullOrWhiteSpace(metaPath) &&
                         !string.IsNullOrWhiteSpace(heightPath) &&
                         File.Exists(metaPath) &&

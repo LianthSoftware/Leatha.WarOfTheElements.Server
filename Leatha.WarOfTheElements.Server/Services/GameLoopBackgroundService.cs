@@ -7,7 +7,11 @@ using System.Diagnostics;
 using System.Numerics;
 using System.Text.Json;
 using Leatha.WarOfTheElements.Common.Communication.Messages;
+using Leatha.WarOfTheElements.Common.Communication.Transfer;
+using Leatha.WarOfTheElements.Common.Communication.Transfer.Enums;
+using Leatha.WarOfTheElements.Common.Communication.Utilities;
 using Leatha.WarOfTheElements.Server.DataAccess.Entities;
+using Leatha.WarOfTheElements.Server.Objects.Characters;
 
 namespace Leatha.WarOfTheElements.Server.Services
 {
@@ -17,12 +21,14 @@ namespace Leatha.WarOfTheElements.Server.Services
             IInputQueueService inputQueue,
             PhysicsWorld physicsWorld,
             IGameWorld gameWorld,
-            IServerToClientHandler serverClientHandler)
+            IServerToClientHandler serverClientHandler,
+            ITemplateService templateService)
         {
             _inputQueue = inputQueue;
             _physicsWorld = physicsWorld;
             _gameWorld = gameWorld;
             _serverClientHandler = serverClientHandler;
+            _templateService = templateService;
         }
 
         private const double TickRate = 60.0;
@@ -32,12 +38,57 @@ namespace Leatha.WarOfTheElements.Server.Services
         private readonly PhysicsWorld _physicsWorld;
         private readonly IGameWorld _gameWorld;
         private readonly IServerToClientHandler _serverClientHandler;
+        private readonly ITemplateService _templateService;
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             var stopwatch = Stopwatch.StartNew();
             var accumulator = 0.0;
             long tick = 0;
+
+            // Initial load. #TODO: Move this elsewhere.
+            var nonPlayerSpawnTemplates = await _templateService.GetNonPlayerSpawnTemplatesAsync();
+            var templates = nonPlayerSpawnTemplates
+                .GroupBy(i => i.NonPlayerId)
+                .ToDictionary(i => i.Key, n => n.ToList());
+            foreach (var template in templates)
+            {
+                var nonPlayerTemplate = await _templateService.GetNonPlayerTemplateAsync(template.Key);
+                if (nonPlayerTemplate == null)
+                {
+                    Debug.WriteLine($"NonPlayer template with Id = \"{ template.Key }\" does not exist.");
+                    continue;
+                }
+
+                foreach (var nonPlayerSpawnTemplate in template.Value)
+                {
+                    var state = new NonPlayerState(Guid.NewGuid(), nonPlayerSpawnTemplate.SpawnPosition, nonPlayerSpawnTemplate.Orientation)
+                    {
+                        CharacterName = nonPlayerTemplate.Name,
+                        CharacterLevel = nonPlayerTemplate.Level,
+                        TemplateId = template.Key,
+                        MapId = nonPlayerSpawnTemplate.MapId,
+                        InstanceId = nonPlayerSpawnTemplate.InstanceId,
+                        Velocity = Vector3.Zero,
+                        Resources = new CharacterResourceObject // #TODO: From some other table or non player template?
+                        {
+                            Health = 333,
+                            MaxHealth = 450,
+                            PrimaryChakra = new ChakraResource
+                            {
+                                Element = ElementTypes.Nature,
+                                Chakra = 14,
+                                MaxChakra = 40,
+                                ChakraPerSecond = 10
+                            }
+                        }
+                    };
+
+                    await _gameWorld.AddNonPlayerToWorldAsync(state, nonPlayerSpawnTemplate);
+
+                    state.Script?.OnSpawn();
+                }
+            }
 
             while (!stoppingToken.IsCancellationRequested)
             {
@@ -47,106 +98,69 @@ namespace Leatha.WarOfTheElements.Server.Services
 
                 while (accumulator >= FixedDt)
                 {
-                    // 1) Process all queued inputs
-                    _inputQueue.Drain(inputs =>
-                    {
-                        foreach (var input in inputs)
-                        {
-                            var playerState = _gameWorld.GetPlayerState(input.PlayerId);
-                            if (playerState is null)
-                                continue;
+                    // Process player inputs.
+                    _inputQueue.Drain(inputs
+                        => _gameWorld.ProcessPlayerInputs(inputs, FixedDt));
 
-                            if (input.Jump)
-                                Debug.WriteLine("Input JUMP");
+                    // Process NPCs.
+                    _gameWorld.ProcessNonPlayers(FixedDt);
 
-                            // Compute desired *horizontal* velocity from input.
-                            // Y is controlled by our kinematic controller (jump + gravity).
-                            var desiredVelocity = playerState.ComputeDesiredVelocity(input, FixedDt);
+                    // Process Spells.
+                    _gameWorld.ProcessSpells(FixedDt);
 
-                            // Combine kinematic horizontal + kinematic vertical (jump + gravity).
-                            // We treat playerState.Velocity as the authoritative gameplay velocity.
-                            var newVelocity = _physicsWorld.MovePlayerKinematic(
-                                input.PlayerId,
-                                playerState.Velocity,   // current gameplay velocity
-                                desiredVelocity,        // desired horizontal (X/Z)
-                                (float)FixedDt,
-                                input.Jump,
-                                playerState.IsOnGround, // grounded from previous tick
-                                PlayerState.JumpImpulse);
+                    // Process Auras.
+                    _gameWorld.ProcessAuras(FixedDt);
 
-                            playerState.Velocity = newVelocity;
+                    // Process chakra updates.
+                    _gameWorld.ProcessChakra(FixedDt);
 
-                            if (newVelocity.Y > 0)
-                                Debug.WriteLine("Velocity Y > 0 (jump applied)");
-
-                            Debug.WriteLine(
-                                $"[{DateTime.Now:HH:mm:ss.ffff}] Input: Seq={input.Sequence} " +
-                                $"Desired=<{desiredVelocity.X:0.000},{desiredVelocity.Y:0.000},{desiredVelocity.Z:0.000}> " +
-                                $"Vel=<{newVelocity.X:0.000},{newVelocity.Y:0.000},{newVelocity.Z:0.000}>");
-
-                            // For reconciliation on client
-                            playerState.LastProcessedInputSeq = input.Sequence;
-                        }
-                    });
-
-                    // 2) Step physics world (other dynamics, contacts, etc.)
+                    // Process physics.
                     _physicsWorld.Step((float)FixedDt);
 
-                    // 3) Sync PlayerState from physics (position/orientation + grounded flag)
-                    foreach (var kvp in _gameWorld.Players)
-                    {
-                        var playerState = kvp.Value;
-
-                        if (!_physicsWorld.TryGetPlayerTransform(
-                                playerState.Body,
-                                out var position,
-                                out var orientation,
-                                out var grounded))
-                        {
-                            // This can happen if the body is removed from the world, but still processed.
-                            continue;
-                        }
-
-                        playerState.Position = position;
-                        // NOTE: Velocity is managed by our kinematic controller;
-                        // do NOT overwrite it with Bepu's internal velocity here.
-                        playerState.IsOnGround = grounded;
-
-                        playerState.Orientation =
-                            Quaternion.CreateFromAxisAngle(Vector3.UnitY, playerState.Yaw);
-
-                        Debug.WriteLine(
-                            $"[PostStep] Pos={playerState.Position} Vel={playerState.Velocity} Grounded={grounded}");
-                    }
+                    // Synchronize characters from physics.
+                    _gameWorld.SynchronizeCharactersFromPhysics(FixedDt);
 
                     tick++;
                     accumulator -= FixedDt;
                 }
 
+                // Send snapshots.
+                await _gameWorld.SendSnapshotAsync(FixedDt, tick, stoppingToken);
+
                 // 4) Build snapshots grouped by (MapId, InstanceId)
-                var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0;
+                //var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0;
 
-                var groups = _gameWorld.Players
-                    .Values
-                    .GroupBy(p => (p.MapId, p.InstanceId));
+                //var groups = _gameWorld.Players
+                //    .Values
+                //    .GroupBy(p => (p.MapId, p.InstanceId));
 
-                foreach (var group in groups)
-                {
-                    var (mapId, instanceId) = group.Key;
+                //foreach (var group in groups)
+                //{
+                //    var (mapId, instanceId) = group.Key;
 
-                    var snapshot = new WorldSnapshotMessage
-                    {
-                        Tick = tick,
-                        ServerTime = now,
-                        MapId = mapId,
-                        InstanceId = instanceId,
-                        Players = group
-                            .Select(p => p.AsTransferObject())
-                            .ToList()
-                    };
+                //    // #TODO: Maybe group this before?
+                //    var nonPlayers = _gameWorld
+                //        .NonPlayers
+                //        .Where(i =>
+                //            i.Value.MapId == mapId &&
+                //            (!instanceId.HasValue || i.Value.InstanceId == instanceId))
+                //        .Select(i => i.Value.AsTransferObject())
+                //        .ToList();
 
-                    await _serverClientHandler.SendSnapshot(snapshot, stoppingToken);
-                }
+                //    var snapshot = new WorldSnapshotMessage
+                //    {
+                //        Tick = tick,
+                //        ServerTime = now,
+                //        MapId = mapId,
+                //        InstanceId = instanceId,
+                //        Players = group
+                //            .Select(p => p.AsTransferObject())
+                //            .ToList(),
+                //        NonPlayers = nonPlayers
+                //    };
+
+                //    await _serverClientHandler.SendSnapshot(snapshot, stoppingToken);
+                //}
 
                 // Tiny sleep to avoid tight busy-wait
                 await Task.Delay(1, stoppingToken);

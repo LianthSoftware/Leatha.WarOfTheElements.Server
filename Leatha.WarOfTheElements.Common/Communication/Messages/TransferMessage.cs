@@ -39,6 +39,17 @@ namespace Leatha.WarOfTheElements.Common.Communication.Messages
             return new TransferMessage<TMessage>(data);
         }
 
+        public static TransferMessage<TMessage> CreateErrorMessage<TMessage>(TMessage? data, string title, string description)
+        {
+            return new TransferMessage<TMessage>(data)
+            {
+                IsError = true,
+                ErrorTitle = title,
+                ErrorMessage = description,
+                Data = data
+            };
+        }
+
         public static TransferMessage<TMessage> CreateErrorMessage<TMessage>(string title, string description)
         {
             return new TransferMessage<TMessage>(title, description);
@@ -52,7 +63,7 @@ namespace Leatha.WarOfTheElements.Common.Communication.Messages
             IsError = false;
         }
 
-        public TransferMessage(TMessageData data)
+        public TransferMessage(TMessageData? data)
         {
             Data = data;
             IsError = false;

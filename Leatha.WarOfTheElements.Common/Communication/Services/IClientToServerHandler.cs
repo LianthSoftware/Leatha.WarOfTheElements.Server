@@ -27,6 +27,11 @@ namespace Leatha.WarOfTheElements.Common.Communication.Services
 
 
 
+        Task<TransferMessage<List<SpellInfoObject>>> GetPlayerSpellBarSpells(Guid playerId);
+
         Task<TransferMessage<SpellCastResult>> CastSpell(Guid casterId, int spellId);
+
+
+        public Task<int> Test(int data);
     }
 }

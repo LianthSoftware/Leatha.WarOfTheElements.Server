@@ -72,13 +72,14 @@ namespace Leatha.WarOfTheElements.Server.Services
 
         public bool IsPlayerOnline(Guid playerId)
         {
-            return _presenceTracker.IsOnline(playerId.ToString());
+            return false; // #TODO
+            //return _presenceTracker.IsOnline(playerId.ToString());
         }
 
-        public async Task AddToMapGroup(Guid playerId, int mapId, Guid? instanceId)
+        public async Task AddToMapGroup(Guid accountId, int mapId, Guid? instanceId)
         {
             // #TODO: Can there be more connections?
-            var connectionId = _presenceTracker.GetConnections(playerId.ToString()).FirstOrDefault();
+            var connectionId = _presenceTracker.GetConnections(accountId.ToString()).FirstOrDefault();
             if (connectionId == null)
                 return;
 
@@ -89,10 +90,10 @@ namespace Leatha.WarOfTheElements.Server.Services
             Debug.WriteLine("AddToMapGroup - Clients Count = " + ClientOnMapCount);
         }
 
-        public async Task RemoveFromMapGroup(Guid playerId, int mapId, Guid? instanceId)
+        public async Task RemoveFromMapGroup(Guid accountId, int mapId, Guid? instanceId)
         {
             // #TODO: Can there be more connections?
-            var connectionId = _presenceTracker.GetConnections(playerId.ToString()).FirstOrDefault();
+            var connectionId = _presenceTracker.GetConnections(accountId.ToString()).FirstOrDefault();
             if (connectionId == null)
                 return;
 

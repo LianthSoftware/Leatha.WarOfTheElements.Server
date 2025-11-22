@@ -1,5 +1,8 @@
-﻿using Leatha.WarOfTheElements.Common.Communication.Transfer.Enums;
+﻿using Leatha.WarOfTheElements.Common.Communication.Transfer;
+using Leatha.WarOfTheElements.Common.Communication.Transfer.Enums;
 using Leatha.WarOfTheElements.Server.Demo;
+using MongoDB.Bson.Serialization.Attributes;
+using MongoDB.Bson.Serialization.Options;
 
 namespace Leatha.WarOfTheElements.Server.DataAccess.Entities.Templates
 {
@@ -19,16 +22,25 @@ namespace Leatha.WarOfTheElements.Server.DataAccess.Entities.Templates
 
         public int Duration { get; set; } // Milliseconds.
 
+        public int TicksCount { get; set; }
+
+
+        [BsonDictionaryOptions(DictionaryRepresentation.ArrayOfArrays)]
+        public Dictionary<ElementTypes, int> ElementChakraCosts { get; set; } = [];
+
+
         public SpellTargets SpellTargets { get; set; }
 
         public SpellFlags SpellFlags { get; set; }
 
 
 
-        public SpellEffectType SpellEffectType { get; set; }
+        public List<SpellEffectObject> SpellEffects { get; set; } = [];
 
         public SpellRank? SpellRank { get; set; }
 
         public string SpellIconPath { get; set; } = null!;
+
+        public string? ScriptName { get; set; }
     }
 }

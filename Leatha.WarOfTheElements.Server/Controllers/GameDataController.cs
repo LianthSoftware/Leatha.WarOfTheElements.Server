@@ -1,5 +1,6 @@
 ﻿using Leatha.WarOfTheElements.Common.Communication.Transfer;
 using Leatha.WarOfTheElements.Server.Services;
+using Leatha.WarOfTheElements.Server.Utilities;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Leatha.WarOfTheElements.Server.Controllers
@@ -23,13 +24,31 @@ namespace Leatha.WarOfTheElements.Server.Controllers
             return Ok();
         }
 
-        //[HttpGet("templates/cards")]
-        //[ProducesResponseType(typeof(List<CardTemplateObject>), StatusCodes.Status200OK)]
-        //public async Task<IActionResult> GetCardTemplatesAsync()
-        //{
-        //    var response = await _templateService.GetCardTemplatesAsync();
-        //    var items = response.Select(i => i.AsTransferObject()).ToList();
-        //    return Ok(items);
-        //}
+        [HttpGet("templates/spell_template")]
+        [ProducesResponseType(typeof(List<SpellInfoObject>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetSpellTemplatesAsync()
+        {
+            var response = await _templateService.GetSpellTemplatesAsync();
+            var items = response.Select(i => i.AsTransferObject()).ToList();
+            return Ok(items);
+        }
+
+        [HttpGet("templates/aura_template")]
+        [ProducesResponseType(typeof(List<AuraInfoObject>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetAuraTemplatesAsync()
+        {
+            var response = await _templateService.GetAuraTemplatesAsync();
+            var items = response.Select(i => i.AsTransferObject()).ToList();
+            return Ok(items);
+        }
+
+        [HttpGet("templates/map_template")]
+        [ProducesResponseType(typeof(List<MapInfoObject>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetMapTemplatesAsync()
+        {
+            var response = await _templateService.GetMapTemplatesAsync();
+            var items = response.Select(i => i.AsTransferObject()).ToList();
+            return Ok(items);
+        }
     }
 }

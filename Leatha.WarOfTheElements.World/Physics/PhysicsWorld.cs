@@ -32,6 +32,9 @@ namespace Leatha.WarOfTheElements.World.Physics
         // PlayerId -> BodyHandle
         private readonly Dictionary<Guid, BodyHandle> _playerBodies = new();
 
+        // NonPlayerId -> BodyHandle
+        private readonly Dictionary<Guid, BodyHandle> _nonPlayerBodies = new();
+
         // Optional heightfield for terrain
         private TerrainHeightfield? _terrain;
 
@@ -209,6 +212,71 @@ namespace Leatha.WarOfTheElements.World.Physics
             }
         }
 
+
+
+
+        public BodyHandle AddNonPlayer(Guid nonPlayerId, Vector3 startPosition, float radius = 0.5f, float halfHeight = 0.9f)
+        {
+            lock (_simLock)
+            {
+                if (_nonPlayerBodies.TryGetValue(nonPlayerId, out var player))
+                    return player;
+
+                // Capsule character (like an FPS controller).
+                var capsule = new Capsule(radius, halfHeight * 2f);
+
+                // We treat this body as "kinematic-like": we drive its pose ourselves,
+                // so we don't really care about its dynamic inertia.
+                var inertia = new BodyInertia
+                {
+                    InverseMass = 1f,
+                    InverseInertiaTensor = new Symmetric3x3() // all zeros
+                };
+
+                var pose = new RigidPose(startPosition);
+                var shapeIndex = _simulation.Shapes.Add(capsule);
+
+                var collidable = new CollidableDescription(shapeIndex, 0.1f);
+                var activity = new BodyActivityDescription(sleepThreshold: 0.01f);
+
+                var bodyDesc = BodyDescription.CreateDynamic(pose, inertia, collidable, activity);
+                var handle = _simulation.Bodies.Add(bodyDesc);
+
+                _nonPlayerBodies[nonPlayerId] = handle;
+
+                return handle;
+            }
+        }
+
+        public void RemoveNonPlayer(Guid nonPlayerId)
+        {
+            lock (_simLock)
+            {
+                if (!_nonPlayerBodies.TryGetValue(nonPlayerId, out var handle))
+                    return;
+
+                var body = _simulation.Bodies[handle];
+                var shapeIndex = body.Collidable.Shape;
+
+                _simulation.Bodies.Remove(handle);
+                _simulation.Shapes.Remove(shapeIndex);
+
+                _nonPlayerBodies.Remove(nonPlayerId);
+            }
+        }
+
+        public bool TryGetNonPlayer(Guid nonPlayerId, out BodyHandle handle)
+        {
+            lock (_simLock)
+            {
+                return _nonPlayerBodies.TryGetValue(nonPlayerId, out handle);
+            }
+        }
+
+
+
+
+
         /// <summary>
         /// Kinematic character controller:
         /// - X/Z controlled directly from desiredVelocity
@@ -231,6 +299,89 @@ namespace Leatha.WarOfTheElements.World.Physics
             lock (_simLock)
             {
                 if (!_playerBodies.TryGetValue(playerId, out var handle))
+                    return currentVelocity;
+
+                var body = _simulation.Bodies.GetBodyReference(handle);
+
+                var pos = body.Pose.Position;
+
+                // Start from gameplay velocity (not Bepu's internal velocity).
+                var v = currentVelocity;
+
+                // --- 1) Horizontal: directly follow desired X/Z ---
+                if (isOnGround)
+                {
+                    v.X = desiredVelocity.X;
+                    v.Z = desiredVelocity.Z;
+                }
+
+                // --- 2) Vertical: jump + gravity ---
+                if (jump && isOnGround && v.Y <= 0f)
+                {
+                    v.Y = jumpImpulse;
+                    Debug.WriteLine(
+                        $"[Jump] jump={jump}, onGround={isOnGround}, new vY={v.Y:0.000}");
+                }
+
+                // Apply manual gravity
+                v.Y += gravityY * dt;
+
+                // --- 3) Integrate position with full velocity ---
+                pos += v * dt;
+
+                // --- 4) Clamp against ground (terrain or flat) ---
+                float surfaceY;
+                if (_terrain is { } terrain)
+                {
+                    surfaceY = SampleTerrainHeight(pos.X, pos.Z, terrain);
+                }
+                else
+                {
+                    surfaceY = _groundY;
+                }
+
+                // Compute capsule bottom offset from center
+                float bottomOffset = 0f;
+                var shapeIndex = body.Collidable.Shape;
+                if (shapeIndex.Exists)
+                {
+                    ref var capsule = ref _simulation.Shapes.GetShape<Capsule>(shapeIndex.Index);
+                    var totalHalfHeight = capsule.Radius + capsule.HalfLength;
+                    bottomOffset = totalHalfHeight;
+                }
+
+                var bottomY = pos.Y - bottomOffset;
+                if (bottomY < surfaceY)
+                {
+                    var delta = surfaceY - bottomY;
+                    pos.Y += delta;
+                    v.Y = 0f; // landed
+                }
+
+                // --- 5) Write back to simulation ---
+                body.Pose.Position = pos;
+
+                // We don't use Bepu's dynamic velocity for this character.
+                // Zero it so gravity from the pose integrator doesn't influence pose.
+                body.Velocity.Linear = Vector3.Zero;
+
+                return v;
+            }
+        }
+
+        public Vector3 MoveNonPlayerKinematic(
+            Guid nonPlayerId,
+            Vector3 currentVelocity,
+            Vector3 desiredVelocity, // X/Z from ComputeDesiredVelocity (desired horizontal speed)
+            float dt,
+            bool jump,
+            bool isOnGround,
+            float jumpImpulse,
+            float gravityY = DefaultGravityY)
+        {
+            lock (_simLock)
+            {
+                if (!_nonPlayerBodies.TryGetValue(nonPlayerId, out var handle))
                     return currentVelocity;
 
                 var body = _simulation.Bodies.GetBodyReference(handle);

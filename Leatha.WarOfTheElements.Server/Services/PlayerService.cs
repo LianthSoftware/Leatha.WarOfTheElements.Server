@@ -19,9 +19,11 @@ namespace Leatha.WarOfTheElements.Server.Services
 
         Task<TransferMessage<PlayerSpellBook>> GetPlayerSpellBookAsync(Guid playerId);
 
-        Task<PlayerState> GetOrCreatePlayerStateAsync(Guid playerId);
+        Task<PlayerState> GetOrCreatePlayerStateAsync(Guid accountId, Guid playerId);
 
         Task<PlayerState> SavePlayerStateAsync(PlayerState state);
+
+        Task<List<Player>> GetCharacterListAsync(Guid accountId);
     }
 
     public sealed class PlayerService : IPlayerService
@@ -105,7 +107,7 @@ namespace Leatha.WarOfTheElements.Server.Services
             return TransferMessage.CreateMessage(playerSpellBook);
         }
 
-        public async Task<PlayerState> GetOrCreatePlayerStateAsync(Guid playerId)
+        public async Task<PlayerState> GetOrCreatePlayerStateAsync(Guid accountId, Guid playerId)
         {
             var filter = Builders<PlayerState>.Filter.Eq(i => i.PlayerId, playerId);
 
@@ -117,8 +119,10 @@ namespace Leatha.WarOfTheElements.Server.Services
             {
                 var defaultPosition = new Vector3(0.0f, 1.0f, 0.0f); // #TODO
                 var defaultOrientation = Quaternion.Identity;
-                return await CreatePlayerStateAsync(playerId, defaultPosition, defaultOrientation);
+                return await CreatePlayerStateAsync(accountId, playerId, defaultPosition, defaultOrientation);
             }
+
+            playerState.SetObjectId(playerId);
 
             return playerState;
         }
@@ -133,9 +137,23 @@ namespace Leatha.WarOfTheElements.Server.Services
             return state;
         }
 
-        private async Task<PlayerState> CreatePlayerStateAsync(Guid playerId, Vector3 position, Quaternion orientation)
+        public async Task<List<Player>> GetCharacterListAsync(Guid accountId)
         {
-            var playerState = new PlayerState(playerId, position, orientation)
+            var filter = Builders<Player>.Filter.Eq(i => i.AccountId, accountId);
+            var playerCharacters = await _mongoAuthDatabase.GetMongoCollection<Player>()
+                .Find(filter)
+                .ToListAsync();
+
+            return playerCharacters;
+        }
+
+        private async Task<PlayerState> CreatePlayerStateAsync(
+            Guid accountId,
+            Guid playerId,
+            Vector3 position,
+            Quaternion orientation)
+        {
+            var playerState = new PlayerState(accountId, playerId, position, orientation)
             {
                 MapId = 1, // MapId = 1 -> Default spawn character map.
             };

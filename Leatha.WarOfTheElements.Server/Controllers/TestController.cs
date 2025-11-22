@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using MongoDB.Driver;
 using System.Diagnostics;
+using Leatha.WarOfTheElements.Common.Communication.Services;
 
 namespace Leatha.WarOfTheElements.Server.Controllers
 {
@@ -19,12 +20,14 @@ namespace Leatha.WarOfTheElements.Server.Controllers
         private readonly IPlayerService _playerService;
         private readonly PhysicsWorld _physicsWorld;
         private readonly IGameWorld _gameWorld;
+        private readonly IGameHubService _gameHubService;
 
-        public TestController(IMongoClient client, IPlayerService playerService, PhysicsWorld physicsWorld, IGameWorld gameWorld)
+        public TestController(IMongoClient client, IPlayerService playerService, PhysicsWorld physicsWorld, IGameWorld gameWorld, IGameHubService gameHubService)
         {
             _playerService = playerService;
             _physicsWorld = physicsWorld;
             _gameWorld = gameWorld;
+            _gameHubService = gameHubService;
             _mongoGameDatabase = client.GetDatabase(Constants.MongoGameDb);
         }
 
@@ -60,7 +63,7 @@ namespace Leatha.WarOfTheElements.Server.Controllers
                 });
             }
 
-            var playerState = await _playerService.GetOrCreatePlayerStateAsync(playerId);
+            var playerState = await _playerService.GetOrCreatePlayerStateAsync(playerResult.Data.AccountId, playerId);
 
             // Add body to physics
             var playerBody = _physicsWorld.AddPlayer(playerId, playerState.Position);
@@ -99,6 +102,28 @@ namespace Leatha.WarOfTheElements.Server.Controllers
             _gameWorld.RemovePlayerState(playerId);
 
             Debug.WriteLine($"Player \"{playerResult.Data.PlayerName}\" ({playerId}) removed from the world.");
+
+            return Ok();
+        }
+
+
+
+
+
+        [HttpPost("signalR/send-test")]
+        [ProducesResponseType(typeof(void), StatusCodes.Status200OK)]
+        public async Task<IActionResult> SendSignalRTest()
+        {
+            await _gameHubService.SendMessageToClient(Guid.Parse("82f41fdc-671b-459f-98a0-687e688c102b"), nameof(IClientToServerHandler.Test), 42);
+            return Ok();
+        }
+
+        [HttpPost("player/{playerId:guid:required}/set-health/{health:int}")]
+        [ProducesResponseType(typeof(void), StatusCodes.Status200OK)]
+        public async Task<IActionResult> SetPlayerHealth(Guid playerId, int health)
+        {
+            if (_gameWorld.GetPlayerState(playerId) is { } state)
+                state.Resources.Health = health;
 
             return Ok();
         }

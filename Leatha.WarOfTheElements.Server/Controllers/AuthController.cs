@@ -49,7 +49,7 @@ namespace Leatha.WarOfTheElements.Server.Controllers
         [Authorize] // Requires authentication
         public async Task<IActionResult> LogoutAsync([FromBody] LogoutRequest request)
         {
-            var result = await _authService.RevokeRefreshTokenAsync(request.PlayerId, request.RefreshToken);
+            var result = await _authService.RevokeRefreshTokenAsync(request.AccountId, request.RefreshToken);
             return Ok(result);
         }
 

@@ -42,11 +42,11 @@ namespace Leatha.WarOfTheElements.Server.Services
 
         public override async Task OnConnectedAsync()
         {
-            var playerIdClaim = GetPlayerId();
-            if (!Guid.TryParse(playerIdClaim, out var playerId))
+            var accountIdClaim = GetAccountId();
+            if (!Guid.TryParse(accountIdClaim, out var accountId))
                 return;
 
-            await _presenceTracker.TrackConnected(playerId.ToString(), Context.ConnectionId);
+            await _presenceTracker.TrackConnected(accountId.ToString(), Context.ConnectionId);
             await base.OnConnectedAsync();
 
             ClientsCount++;
@@ -55,13 +55,13 @@ namespace Leatha.WarOfTheElements.Server.Services
 
         public override async Task OnDisconnectedAsync(Exception? exception)
         {
-            var playerIdClaim = GetPlayerId();
-            if (!Guid.TryParse(playerIdClaim, out var playerId))
+            var accountIdClaim = GetAccountId();
+            if (!Guid.TryParse(accountIdClaim, out var accountId))
                 return;
 
-            await ExitWorld(playerId); // #TODO: Is this correct?
+            //await ExitWorld(accountId); // #TODO: Is this correct?
 
-            await _presenceTracker.TrackDisconnected(playerId.ToString(), Context.ConnectionId);
+            await _presenceTracker.TrackDisconnected(accountId.ToString(), Context.ConnectionId);
             await base.OnDisconnectedAsync(exception);
 
             ClientsCount--;
@@ -69,9 +69,12 @@ namespace Leatha.WarOfTheElements.Server.Services
         }
 
 
-        public Task<TransferMessage<List<PlayerObject>>> GetCharacterList(Guid accountId)
+        public async Task<TransferMessage<List<PlayerObject>>> GetCharacterList(Guid accountId)
         {
-            throw new NotImplementedException();
+            var characters = await _playerService.GetCharacterListAsync(accountId);
+            var result = characters.Select(i => i.AsTransferObject()).ToList();
+
+            return TransferMessage.CreateMessage(result);
         }
 
         public async Task<TransferMessage<PlayerStateObject>> EnterWorld(Guid playerId)
@@ -84,11 +87,12 @@ namespace Leatha.WarOfTheElements.Server.Services
                     playerResult.ErrorMessage!);
             }
 
-            var playerState = await _playerService.GetOrCreatePlayerStateAsync(playerId);
+            var playerState = await _playerService.GetOrCreatePlayerStateAsync(playerResult.Data.AccountId, playerId);
 
             // Reset last processed input.
             playerState.LastProcessedInputSeq = 0;
             playerState.Velocity = Vector3.Zero;
+
             await _playerService.SavePlayerStateAsync(playerState);
 
             //// Add body to physics
@@ -141,11 +145,10 @@ namespace Leatha.WarOfTheElements.Server.Services
             return TransferMessage.CreateMessage();
         }
 
-        public async Task<TransferMessage> SendPlayerInput(PlayerInputObject playerInput)
+        public Task<TransferMessage> SendPlayerInput(PlayerInputObject playerInput)
         {
-            Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.ffff}] SendPlayerInput: Sequence = {playerInput.Sequence} | Input DTO: {JsonSerializer.Serialize(playerInput)}");
             _inputQueueService.Enqueue(playerInput);
-            return TransferMessage.CreateMessage();
+            return Task.FromResult(TransferMessage.CreateMessage());
         }
 
         public async Task<TransferMessage<PlayerObject>> GetPlayer(Guid playerId)
@@ -186,7 +189,7 @@ namespace Leatha.WarOfTheElements.Server.Services
             var result = await _playerService.GetPlayerSpellBookAsync(playerId);
 
             var spells = new List<SpellInfoObject>();
-            if (result.Data != null)
+            if (result is { IsError: false, Data: not null })
             {
                 // #TODO: Recalculate spells.
 
@@ -197,29 +200,51 @@ namespace Leatha.WarOfTheElements.Server.Services
                         spells.Add(spellInfo);
                 }
             }
+            else
+                TransferMessage.CreateErrorMessage<List<SpellInfoObject>>(result.ErrorTitle!, result.ErrorMessage!);
+
+            return CreateMessage(result, spells);
+        }
+
+        public async Task<TransferMessage<List<SpellInfoObject>>> GetPlayerSpellBarSpells(Guid playerId)
+        {
+            var result = await _playerService.GetPlayerSpellBookAsync(playerId);
+
+            var spells = new List<SpellInfoObject>();
+            if (result is { IsError: false, Data: not null })
+            {
+                foreach (var spellId in result.Data.SpellBarSpells)
+                {
+                    var spellInfo = await _spellService.GetSpellInfoAsync(spellId);
+                    if (spellInfo != null)
+                        spells.Add(spellInfo);
+                }
+            }
+            else
+                TransferMessage.CreateErrorMessage<List<SpellInfoObject>>(result.ErrorTitle!, result.ErrorMessage!);
 
             return CreateMessage(result, spells);
         }
 
         public async Task<TransferMessage<SpellCastResult>> CastSpell(Guid casterId, int spellId)
         {
-            var result = await _spellService.CastSpellAsync(casterId, spellId);
+            var result = await _spellService.CastSpellAsync(
+                new WorldObjectId(casterId, WorldObjectType.Player),
+                spellId);
 
-            return TransferMessage.CreateMessage(result);
+            return CreateMessage(result, result.Data);
         }
 
-
-
-
-
-
-
+        public async Task<int> Test(int data)
+        {
+            return data;
+        }
 
 
         private static TransferMessage<TMessage> CreateMessage<TMessage, TOriginal>(TransferMessage<TOriginal> result, TMessage? data)
         {
             if (result.IsError || result.Data == null || data == null)
-                return TransferMessage.CreateErrorMessage<TMessage>(result.ErrorTitle!, result.ErrorMessage!);
+                return TransferMessage.CreateErrorMessage(data, result.ErrorTitle!, result.ErrorMessage!);
 
             return TransferMessage.CreateMessage(data);
         }
@@ -232,10 +257,10 @@ namespace Leatha.WarOfTheElements.Server.Services
             return TransferMessage.CreateMessage();
         }
 
-        private string? GetPlayerId()
+        private string? GetAccountId()
         {
-            var playerIdClaim = Context.GetHttpContext()?.User.FindFirst("player_id")?.Value;
-            return playerIdClaim;
+            var accountIdClaim = Context.GetHttpContext()?.User.FindFirst("account_id")?.Value;
+            return accountIdClaim;
         }
     }
 }

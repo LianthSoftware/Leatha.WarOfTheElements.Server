@@ -7,13 +7,13 @@ namespace Leatha.WarOfTheElements.Server.Services
     {
         public string? GetUserId(HubConnectionContext connection)
         {
-            var playerId = connection.User.FindFirst("player_id")?.Value;
+            var accountId = connection.User.FindFirst("account_id")?.Value;
 
-            Debug.WriteLine(String.IsNullOrWhiteSpace(playerId)
-                ? "No PlayerId was provided."
-                : $"Token has PlayerId = \"{playerId}\"");
+            Debug.WriteLine(String.IsNullOrWhiteSpace(accountId)
+                ? "No AccountId was provided."
+                : $"Token has AccountId = \"{ accountId }\"");
 
-            return playerId;
+            return accountId;
         }
     }
 }

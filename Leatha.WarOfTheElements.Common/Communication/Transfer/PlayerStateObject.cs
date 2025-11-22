@@ -1,18 +1,20 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace Leatha.WarOfTheElements.Common.Communication.Transfer
+﻿namespace Leatha.WarOfTheElements.Common.Communication.Transfer
 {
-    public sealed class PlayerStateObject
+    public sealed class PlayerStateObject : ICharacterStateObject
     {
-        public Guid PlayerId { get; set; }
+        public WorldObjectId WorldObjectId { get; set; }
+
+        public string CharacterName { get; set; } = null!;
+
+        public int CharacterLevel { get; set; }
 
         public int MapId { get; set; }
 
         public Guid? InstanceId { get; set; }
+
+        public CharacterResourceObject Resources { get; set; } = new();
+
+        public List<AuraObject> Auras { get; set; } = [];
 
         // Position
         public float X { get; set; }

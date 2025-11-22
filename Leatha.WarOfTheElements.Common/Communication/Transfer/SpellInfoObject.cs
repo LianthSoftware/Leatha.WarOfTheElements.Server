@@ -25,6 +25,7 @@ namespace Leatha.WarOfTheElements.Common.Communication.Transfer
 
         [Required]
         [JsonPropertyName("elementTypes")]
+        [JsonConverter(typeof(JsonStringEnumConverter))]
         public ElementTypes ElementTypes { get; set; }
 
         [Required]
@@ -39,6 +40,8 @@ namespace Leatha.WarOfTheElements.Common.Communication.Transfer
         [JsonPropertyName("duration")]
         public int Duration { get; set; } // Milliseconds.
 
+        public Dictionary<ElementTypes, int> ElementChakraCosts { get; set; } = [];
+
         [Required]
         [JsonPropertyName("spellTargets")]
         [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -51,9 +54,8 @@ namespace Leatha.WarOfTheElements.Common.Communication.Transfer
 
 
         [Required]
-        [JsonPropertyName("spellEffectType")]
-        [JsonConverter(typeof(JsonStringEnumConverter))]
-        public SpellEffectType SpellEffectType { get; set; }
+        [JsonPropertyName("spellEffects")]
+        public List<SpellEffectObject> SpellEffects { get; set; } = [];
 
         [Required]
         [JsonPropertyName("spellRank")]

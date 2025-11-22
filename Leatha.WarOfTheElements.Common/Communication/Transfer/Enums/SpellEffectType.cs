@@ -11,5 +11,6 @@ namespace Leatha.WarOfTheElements.Common.Communication.Transfer.Enums
         None                            = 0,
         DealDamage                      = 1,
         ApplyAura                       = 2,
+        Heal                            = 3,
     }
 }
