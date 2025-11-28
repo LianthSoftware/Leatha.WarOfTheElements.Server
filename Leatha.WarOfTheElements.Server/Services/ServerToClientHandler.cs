@@ -61,5 +61,17 @@ namespace Leatha.WarOfTheElements.Server.Services
                 nameof(IServerToClientHandler.SendAuraRemove),
                 auraObject);
         }
+
+        public Task Talk(ChatMessageObject chatMessage, List<Guid> accountIds)
+        {
+            return Parallel.ForEachAsync(accountIds, async  (accountId, cancellationToken) =>
+            {
+                await _gameHubService.SendMessageToClient(
+                    accountId,
+                    nameof(IServerToClientHandler.Talk),
+                    chatMessage,
+                    cancellationToken);
+            });
+        }
     }
 }

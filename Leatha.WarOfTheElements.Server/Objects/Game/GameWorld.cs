@@ -1,9 +1,12 @@
 ﻿using Leatha.WarOfTheElements.Common.Communication.Messages;
+using Leatha.WarOfTheElements.Common.Communication.Services;
 using Leatha.WarOfTheElements.Common.Communication.Transfer;
+using Leatha.WarOfTheElements.Common.Communication.Transfer.Enums;
 using Leatha.WarOfTheElements.Common.Communication.Utilities;
 using Leatha.WarOfTheElements.Server.DataAccess.Entities;
 using Leatha.WarOfTheElements.Server.DataAccess.Entities.Templates;
 using Leatha.WarOfTheElements.Server.Objects.Characters;
+using Leatha.WarOfTheElements.Server.Scripts.Auras;
 using Leatha.WarOfTheElements.Server.Scripts.Spells;
 using Leatha.WarOfTheElements.Server.Services;
 using Leatha.WarOfTheElements.Server.Utilities;
@@ -12,8 +15,9 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Numerics;
 using System.Text.RegularExpressions;
-using Leatha.WarOfTheElements.Common.Communication.Services;
-using Leatha.WarOfTheElements.Server.Scripts.Auras;
+using Leatha.WarOfTheElements.Common.Environment.Collisions;
+using Leatha.WarOfTheElements.Server.Objects.GameObjects;
+using MongoDB.Driver;
 
 namespace Leatha.WarOfTheElements.Server.Objects.Game
 {
@@ -34,6 +38,10 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
 
 
 
+        Task TalkAsync(string message, ChatMessageType messageType, float duration, ICharacterState state);
+
+
+
         PlayerState? GetPlayerState(Guid playerId);
 
         PlayerState? RemovePlayerState(Guid playerId);
@@ -43,6 +51,9 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
         Task AddPlayerToWorldAsync(PlayerState? state);
 
         Task RemovePlayerFromWorldAsync(PlayerState? state);
+
+        List<ICharacterState> GetCharacters();
+        List<ICharacterState> GetCharacters(Vector3 position, float distance);
 
 
 
@@ -74,16 +85,22 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
     public sealed class GameWorld : IGameWorld
     {
         public GameWorld(
+            IMongoClient mongoClient,
             IGameHubService gameHubService,
             PhysicsWorld physicsWorld,
             IPlayerService playerService,
             IScriptService scriptService,
+            IChatService chatService,
+            ITemplateService templateService,
             IServerToClientHandler serverClientHandler)
         {
+            _mongoGameDatabase = mongoClient.GetDatabase(Constants.MongoGameDb);
             _gameHubService = gameHubService;
             _physicsWorld = physicsWorld;
             _playerService = playerService;
             _scriptService = scriptService;
+            _chatService = chatService;
+            _templateService = templateService;
             _serverClientHandler = serverClientHandler;
         }
 
@@ -91,14 +108,19 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
 
         public ConcurrentDictionary<Guid, NonPlayerState> NonPlayers { get; } = new();
 
+        public ConcurrentDictionary<Guid, GameObjectState> GameObjects { get; } = new();
+
         public ConcurrentDictionary<Guid, Spell> Spells { get; } = new();
 
         public ConcurrentDictionary<Guid, Aura> Auras { get; } = new();
 
+        private readonly IMongoDatabase _mongoGameDatabase;
         private readonly IGameHubService _gameHubService;
         private readonly PhysicsWorld _physicsWorld;
         private readonly IPlayerService _playerService;
         private readonly IScriptService _scriptService;
+        private readonly IChatService _chatService;
+        private readonly ITemplateService _templateService;
         private readonly IServerToClientHandler _serverClientHandler;
 
         public void RegisterSpell(SpellObject spellObject, SpellScriptBase? spellScript)
@@ -119,6 +141,35 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
                 AuraObject = auraObject,
                 Script = spellScript
             };
+        }
+
+        public Task TalkAsync(string message, ChatMessageType messageType, float duration, ICharacterState state)
+        {
+            var distance = 50.0f;
+            var players = GetCharacters(state.Position, distance)
+                .Where(i => i.WorldObjectId.IsPlayer())
+                .ToList();
+
+            return _chatService.TalkAsync(message, messageType, duration, state, players);
+            // #TODO: pass it or whatever.
+            //var distance = 50.0f;
+
+            //var players = GetCharacters(distance, state.Position);
+
+            //var chatMessage = new ChatMessageObject
+            //{
+            //    TalkerId = state.WorldObjectId,
+            //    TalkerName = state.CharacterName,
+            //    MessageType = messageType,
+            //    Message = message,
+            //    Duration = duration
+            //};
+
+            //await _serverClientHandler.Talk(chatMessage,
+            //    players
+            //        .OfType<PlayerState>()
+            //        .Select(i => i.AccountId)
+            //        .ToList());
         }
 
         public PlayerState? GetPlayerState(Guid playerId)
@@ -150,6 +201,12 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
             if (playerState == null)
                 return;
 
+            if (!_loadedMaps.ContainsKey(playerState.MapId))
+            {
+                // Load map.
+                await LoadMapAsync(playerState.MapId);
+            }
+
             // Add body to physics
             var playerBody = _physicsWorld.AddPlayer(playerState.PlayerId, playerState.Position);
             playerState.SetPhysicsBody(playerBody);
@@ -159,6 +216,114 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
 
             // Add it to SignalR group.
             await _gameHubService.AddToMapGroup(playerState.AccountId, playerState.MapId, playerState.InstanceId);
+        }
+
+        private Dictionary<int, LoadedMapInfo> _loadedMaps = [];
+
+        private async Task LoadMapAsync(int mapId)
+        {
+            // Load static environment game objects.
+            {
+                var filter = Builders<EnvironmentInstance>.Filter.Eq(i => i.MapId, mapId);
+
+                var envStaticInstances = await _mongoGameDatabase.GetMongoCollection<EnvironmentInstance>()
+                    .Find(filter)
+                    .ToListAsync();
+
+                Debug.WriteLine($"Found \"{ envStaticInstances.Count }\" instances.");
+
+                // #TODO: Load it.
+                foreach (var instance in envStaticInstances)
+                {
+                    _physicsWorld.AddEnvironmentObject(instance.AsTransferObject());
+                }
+            }
+
+            // Non Players.
+            {
+                var nonPlayerSpawnTemplates = await _templateService.GetNonPlayerSpawnTemplatesAsync();
+                var templates = nonPlayerSpawnTemplates
+                    .Where(i => i.MapId == mapId)
+                    .GroupBy(i => i.NonPlayerId)
+                    .ToDictionary(i => i.Key, n => n.ToList());
+                foreach (var template in templates)
+                {
+                    var nonPlayerTemplate = await _templateService.GetNonPlayerTemplateAsync(template.Key);
+                    if (nonPlayerTemplate == null)
+                    {
+                        Debug.WriteLine($"NonPlayer template with Id = \"{template.Key}\" does not exist.");
+                        continue;
+                    }
+
+                    foreach (var nonPlayerSpawnTemplate in template.Value)
+                    {
+                        var state = new NonPlayerState(Guid.NewGuid(), nonPlayerSpawnTemplate.SpawnPosition, nonPlayerSpawnTemplate.Orientation)
+                        {
+                            CharacterName = nonPlayerTemplate.Name,
+                            CharacterLevel = nonPlayerTemplate.Level,
+                            TemplateId = template.Key,
+                            MapId = nonPlayerSpawnTemplate.MapId,
+                            Velocity = Vector3.Zero,
+                            Resources = new CharacterResourceObject // #TODO: From some other table or non player template?
+                            {
+                                Health = 333,
+                                MaxHealth = 450,
+                                PrimaryChakra = new ChakraResource
+                                {
+                                    Element = ElementTypes.Nature,
+                                    Chakra = 14,
+                                    MaxChakra = 40,
+                                    ChakraPerSecond = 10
+                                }
+                            },
+                        };
+
+                        await AddNonPlayerToWorldAsync(state, nonPlayerSpawnTemplate);
+
+                        state.Script?.OnSpawn();
+                    }
+                }
+            }
+
+            // GameObjects.
+            {
+                var gameObjectTemplates = await _templateService.GetGameObjectSpawnTemplatesAsync();
+                var templates = gameObjectTemplates
+                    .Where(i => i.MapId == mapId)
+                    .GroupBy(i => i.GameObjectId)
+                    .ToDictionary(i => i.Key, n => n.ToList());
+
+                foreach (var template in templates)
+                {
+                    var gameObjectTemplate = await _templateService.GetGameObjectTemplateAsync(template.Key);
+                    if (gameObjectTemplate == null)
+                    {
+                        Debug.WriteLine($"GameObject template with Id = \"{template.Key}\" does not exist.");
+                        continue;
+                    }
+
+                    foreach (var gameObjectSpawnTemplate in template.Value)
+                    {
+                        var state = new GameObjectState(Guid.NewGuid(), gameObjectSpawnTemplate.SpawnPosition, gameObjectSpawnTemplate.Orientation)
+                        {
+                            GameObjectName = gameObjectTemplate.Name,
+                            TemplateId = template.Key,
+                            MapId = gameObjectSpawnTemplate.MapId,
+                        };
+
+                        await AddGameObjectToWorldAsync(state, gameObjectSpawnTemplate);
+
+                        //state.Script?.OnSpawn();
+                    }
+                }
+            }
+        }
+
+        public sealed class LoadedMapInfo
+        {
+            public int MapId { get; set; }
+
+            public Guid? InstanceId { get; set; }
         }
 
         public async Task RemovePlayerFromWorldAsync(PlayerState? playerState)
@@ -196,15 +361,38 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
                 return;
 
             // Add body to physics
-            var playerBody = _physicsWorld.AddNonPlayer(state.NonPlayerId, state.Position);
+            var playerBody = _physicsWorld.AddNonPlayer(state.NonPlayerId, state.Position, state.Orientation);
             state.SetPhysicsBody(playerBody, spawnTemplate.SpawnPosition, spawnTemplate.Orientation);
 
             var script = await _scriptService.CreateScriptAsync(state);
             if (script != null)
+            {
+                script.SetGameWorld(this);
                 state.SetScript(script);
+            }
 
             // Register in the in-memory game world so GameLoop sees it
             NonPlayers[state.NonPlayerId] = state;
+        }
+
+        public async Task AddGameObjectToWorldAsync(GameObjectState? state, GameObjectSpawnTemplate spawnTemplate)
+        {
+            if (state == null)
+                return;
+
+            // Add body to physics
+            var staticBody = _physicsWorld.AddStaticObject(state.GameObjectId, state.Position, state.Orientation);
+            state.SetPhysicsBody(staticBody, spawnTemplate.SpawnPosition, spawnTemplate.Orientation);
+
+            //var script = await _scriptService.CreateScriptAsync(state);
+            //if (script != null)
+            //{
+            //    script.SetGameWorld(this);
+            //    state.SetScript(script);
+            //}
+
+            // Register in the in-memory game world so GameLoop sees it
+            GameObjects[state.GameObjectId] = state;
         }
 
         public void RemovePlayerFromWorld(NonPlayerState? state)
@@ -269,7 +457,7 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
                 //    continue; // TODO: temporary
 
                 // 1) AI script decides what to do this tick (MoveTo, etc.)
-                nonPlayerState.Script?.OnUpdate(fixedDelta);
+                nonPlayerState.Script?.Update(fixedDelta);
 
                 // 2) MotionMaster converts AI decisions into local input (Velocity)
                 nonPlayerState.MotionMaster.Update(fixedDelta);
@@ -288,6 +476,26 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
                     PlayerState.JumpImpulse);   // you can also define a NonPlayer jump if needed
 
                 nonPlayerState.Velocity = newVelocity;
+
+                // #TODO: Maybe do without script and store in NonPlayerState?
+                if (nonPlayerState.Script != null)
+                {
+                    var characters = Players.Values
+                        .Where(i =>
+                            Vector3.Distance(i.Position, nonPlayerState.Position) <= nonPlayerState.Script.DistanceRadius)
+                        .ToList();
+
+                    foreach (var character in characters)
+                    {
+                        var foundCharacter = nonPlayerState.Script.CharactersInDistance.SingleOrDefault();
+                        if (foundCharacter == null)
+                            nonPlayerState.Script.OnPlayerMovedToRadius(character);
+                    }
+
+                    nonPlayerState.Script.CharactersInDistance.Clear();
+                    nonPlayerState.Script.CharactersInDistance.AddRange(characters);
+                }
+
 
                 //if (nonPlayerState.WorldObjectId.IsNonPlayer())
                 //    Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.ffff}] New Velocity = {newVelocity} | Desired = {desiredVelocity}");
@@ -447,13 +655,46 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
             }
         }
 
-        private List<ICharacterState> GetCharacters()
+        public List<ICharacterState> GetCharacters()
         {
             var characters = new List<ICharacterState>();
             characters.AddRange(Players.Values);
             characters.AddRange(NonPlayers.Values);
 
             return characters;
+        }
+
+        public List<ICharacterState> GetCharacters(Vector3 position, float distance)
+        {
+            var characters = new List<ICharacterState>();
+            characters.AddRange(Players.Values);
+            characters.AddRange(NonPlayers.Values);
+
+            if (distance > 0.0f)
+            {
+                characters = characters
+                    .Where(i =>
+                        Vector3.Distance(i.Position, position) <= distance)
+                    .ToList();
+            }
+
+            return characters;
+        }
+
+        private List<PlayerState> GetPlayers(Vector3 position, float distance)
+        {
+            var players = new List<PlayerState>();
+            players.AddRange(Players.Values);
+
+            if (distance > 0.0f)
+            {
+                players = players
+                    .Where(i =>
+                        Vector3.Distance(i.Position, position) <= distance)
+                    .ToList();
+            }
+
+            return players;
         }
 
         //public EnvironmentGeometry Environment { get; } = new();

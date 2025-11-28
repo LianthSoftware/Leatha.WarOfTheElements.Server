@@ -54,7 +54,7 @@ namespace Leatha.WarOfTheElements.Server.Objects.Characters
 
         public bool IsSprinting { get; set; }
 
-        public const float WalkSpeed = 2f;
+        public const float WalkSpeed = 1.2f;
         public const float SprintMultiplier = 1.8f;
         public const float FlySpeed = 8f;
         public const float JumpImpulse = 7f;
@@ -159,13 +159,13 @@ namespace Leatha.WarOfTheElements.Server.Objects.Characters
             return desired;
         }
 
-        public void Update(double delta)
-        {
-            // Update character's movement.
-            MotionMaster.Update(delta);
+        //public void Update(double delta)
+        //{
+        //    // Update character's movement.
+        //    MotionMaster.Update(delta);
 
-            // Update script.
-            Script?.OnUpdate(delta);
-        }
+        //    // Update script.
+        //    Script?.Update(delta);
+        //}
     }
 }

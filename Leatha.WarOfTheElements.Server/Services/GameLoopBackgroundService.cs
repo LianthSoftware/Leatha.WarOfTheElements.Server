@@ -47,48 +47,48 @@ namespace Leatha.WarOfTheElements.Server.Services
             long tick = 0;
 
             // Initial load. #TODO: Move this elsewhere.
-            var nonPlayerSpawnTemplates = await _templateService.GetNonPlayerSpawnTemplatesAsync();
-            var templates = nonPlayerSpawnTemplates
-                .GroupBy(i => i.NonPlayerId)
-                .ToDictionary(i => i.Key, n => n.ToList());
-            foreach (var template in templates)
-            {
-                var nonPlayerTemplate = await _templateService.GetNonPlayerTemplateAsync(template.Key);
-                if (nonPlayerTemplate == null)
-                {
-                    Debug.WriteLine($"NonPlayer template with Id = \"{ template.Key }\" does not exist.");
-                    continue;
-                }
+            //var nonPlayerSpawnTemplates = await _templateService.GetNonPlayerSpawnTemplatesAsync();
+            //var templates = nonPlayerSpawnTemplates
+            //    .GroupBy(i => i.NonPlayerId)
+            //    .ToDictionary(i => i.Key, n => n.ToList());
+            //foreach (var template in templates)
+            //{
+            //    var nonPlayerTemplate = await _templateService.GetNonPlayerTemplateAsync(template.Key);
+            //    if (nonPlayerTemplate == null)
+            //    {
+            //        Debug.WriteLine($"NonPlayer template with Id = \"{ template.Key }\" does not exist.");
+            //        continue;
+            //    }
 
-                foreach (var nonPlayerSpawnTemplate in template.Value)
-                {
-                    var state = new NonPlayerState(Guid.NewGuid(), nonPlayerSpawnTemplate.SpawnPosition, nonPlayerSpawnTemplate.Orientation)
-                    {
-                        CharacterName = nonPlayerTemplate.Name,
-                        CharacterLevel = nonPlayerTemplate.Level,
-                        TemplateId = template.Key,
-                        MapId = nonPlayerSpawnTemplate.MapId,
-                        InstanceId = nonPlayerSpawnTemplate.InstanceId,
-                        Velocity = Vector3.Zero,
-                        Resources = new CharacterResourceObject // #TODO: From some other table or non player template?
-                        {
-                            Health = 333,
-                            MaxHealth = 450,
-                            PrimaryChakra = new ChakraResource
-                            {
-                                Element = ElementTypes.Nature,
-                                Chakra = 14,
-                                MaxChakra = 40,
-                                ChakraPerSecond = 10
-                            }
-                        }
-                    };
+            //    foreach (var nonPlayerSpawnTemplate in template.Value)
+            //    {
+            //        var state = new NonPlayerState(Guid.NewGuid(), nonPlayerSpawnTemplate.SpawnPosition, nonPlayerSpawnTemplate.Orientation)
+            //        {
+            //            CharacterName = nonPlayerTemplate.Name,
+            //            CharacterLevel = nonPlayerTemplate.Level,
+            //            TemplateId = template.Key,
+            //            MapId = nonPlayerSpawnTemplate.MapId,
+            //            //InstanceId = nonPlayerSpawnTemplate.InstanceId,
+            //            Velocity = Vector3.Zero,
+            //            Resources = new CharacterResourceObject // #TODO: From some other table or non player template?
+            //            {
+            //                Health = 333,
+            //                MaxHealth = 450,
+            //                PrimaryChakra = new ChakraResource
+            //                {
+            //                    Element = ElementTypes.Nature,
+            //                    Chakra = 14,
+            //                    MaxChakra = 40,
+            //                    ChakraPerSecond = 10
+            //                }
+            //            }
+            //        };
 
-                    await _gameWorld.AddNonPlayerToWorldAsync(state, nonPlayerSpawnTemplate);
+            //        await _gameWorld.AddNonPlayerToWorldAsync(state, nonPlayerSpawnTemplate);
 
-                    state.Script?.OnSpawn();
-                }
-            }
+            //        state.Script?.OnSpawn();
+            //    }
+            //}
 
             while (!stoppingToken.IsCancellationRequested)
             {

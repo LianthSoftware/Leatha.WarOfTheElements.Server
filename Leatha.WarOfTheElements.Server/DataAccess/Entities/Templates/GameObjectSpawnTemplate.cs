@@ -2,13 +2,11 @@
 
 namespace Leatha.WarOfTheElements.Server.DataAccess.Entities.Templates
 {
-    public sealed class NonPlayerSpawnTemplate : MongoEntity
+    public sealed class GameObjectSpawnTemplate : MongoEntity
     {
-        public int NonPlayerId { get; set; }
+        public int GameObjectId { get; set; }
 
         public int MapId { get; set; }
-
-        //public Guid? InstanceId { get; set; }
 
         public Vector3 SpawnPosition { get; set; }
 

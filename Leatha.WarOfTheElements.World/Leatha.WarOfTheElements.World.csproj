@@ -13,4 +13,8 @@
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Leatha.WarOfTheElements.Common\Leatha.WarOfTheElements.Common.csproj" />
+  </ItemGroup>
+
 </Project>

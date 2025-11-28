@@ -1,10 +1,14 @@
-﻿using System.Diagnostics;
-using BepuPhysics;
+﻿using BepuPhysics;
 using BepuPhysics.Collidables;
 using BepuUtilities;
 using BepuUtilities.Memory;
+using Leatha.WarOfTheElements.Common.Environment.Collisions;
 using Leatha.WarOfTheElements.World.Terrain;
+using System.Diagnostics;
 using System.Numerics;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using Leatha.WarOfTheElements.Common.Communication.Utilities;
 
 namespace Leatha.WarOfTheElements.World.Physics
 {
@@ -34,6 +38,12 @@ namespace Leatha.WarOfTheElements.World.Physics
 
         // NonPlayerId -> BodyHandle
         private readonly Dictionary<Guid, BodyHandle> _nonPlayerBodies = new();
+
+        // GameObjectId -> StaticHandle
+        private readonly Dictionary<Guid, StaticHandle> _gameObjectBodies = new();
+
+        // Random GUID -> StaticHandle
+        private readonly Dictionary<Guid, StaticHandle> _staticBodies = new();
 
         // Optional heightfield for terrain
         private TerrainHeightfield? _terrain;
@@ -215,7 +225,7 @@ namespace Leatha.WarOfTheElements.World.Physics
 
 
 
-        public BodyHandle AddNonPlayer(Guid nonPlayerId, Vector3 startPosition, float radius = 0.5f, float halfHeight = 0.9f)
+        public BodyHandle AddNonPlayer(Guid nonPlayerId, Vector3 startPosition, Quaternion orientation, float radius = 0.5f, float halfHeight = 0.9f)
         {
             lock (_simLock)
             {
@@ -233,7 +243,7 @@ namespace Leatha.WarOfTheElements.World.Physics
                     InverseInertiaTensor = new Symmetric3x3() // all zeros
                 };
 
-                var pose = new RigidPose(startPosition);
+                var pose = new RigidPose(startPosition, orientation);
                 var shapeIndex = _simulation.Shapes.Add(capsule);
 
                 var collidable = new CollidableDescription(shapeIndex, 0.1f);
@@ -273,6 +283,89 @@ namespace Leatha.WarOfTheElements.World.Physics
             }
         }
 
+        public StaticHandle AddStaticObject(Guid gameObjectId, Vector3 position, Quaternion rotation, float radius = 0.5f, float height = 2.0f)
+        {
+            lock (_simLock)
+            {
+                if (_gameObjectBodies.TryGetValue(gameObjectId, out var gameObject))
+                    return gameObject;
+
+                var capsule = new Capsule(radius, height);
+                var shapeIndex = _simulation.Shapes.Add(capsule);
+
+                var pose = new RigidPose(position);
+
+                var staticDescription = new StaticDescription(pose.Position, rotation, shapeIndex);
+                // or new StaticDescription(pose, shapeIndex); depending on overload/version
+
+                var handle = _simulation.Statics.Add(staticDescription);
+
+                _gameObjectBodies[gameObjectId] = handle;
+
+                return handle;
+            }
+        }
+
+        public StaticHandle AddEnvironmentObject(EnvironmentInstanceObject instance)
+        {
+            lock (_simLock)
+            {
+                var shapeIndex = CreateShape(instance);
+                //var shapeIndex = _simulation.Shapes.Add(capsule);
+
+                var rotation = instance.RotationDegrees.FromEulerDegrees();
+                var pose = new RigidPose(instance.Position, rotation);
+
+                var staticDescription = new StaticDescription(pose.Position, rotation, shapeIndex);
+                // or new StaticDescription(pose, shapeIndex); depending on overload/version
+
+                var handle = _simulation.Statics.Add(staticDescription);
+
+                _staticBodies[Guid.NewGuid()] = handle;
+
+                var aaa = JsonSerializer.Serialize(instance, new JsonSerializerOptions
+                {
+                    WriteIndented = true,
+                    IncludeFields = true,
+                });
+                Debug.WriteLine($"[AddEnvironmentObject]: Position: { pose.Position } | Orientation: { pose.Orientation } | JSON: { aaa }");
+
+                return handle;
+            }
+        }
+
+        private TypedIndex CreateShape(EnvironmentInstanceObject instance)
+        {
+            switch (instance.ShapeType)
+            {
+                case ColliderArchetypeType.Box: // #TODO: Multiply by archetype size???
+                    var box = new Box(
+                        instance.ColliderSize.X,
+                        instance.ColliderSize.Y,
+                        instance.ColliderSize.Z);
+
+                    return _simulation.Shapes.Add(box);
+                //case ColliderArchetypeType.Capsule:
+                //    return new Capsule()
+                case ColliderArchetypeType.ConvexHull:
+                    if (instance.ConvexHullPoints == null || instance.ConvexHullPoints.Count < 2)
+                        throw new InvalidOperationException("ConvexHull does not have correct points.");
+
+                    var convexHull = new ConvexHull(
+                        instance.ConvexHullPoints.ToArray(),
+                        _bufferPool,
+                        out var center);
+
+                    instance.Position += center;
+
+                    return _simulation.Shapes.Add(convexHull);
+                case ColliderArchetypeType.Cylinder:
+                    var cylinder = new Cylinder(instance.ColliderSize.X, instance.ColliderSize.Y);
+                    return _simulation.Shapes.Add(cylinder);
+                default:
+                    throw new InvalidOperationException("Shape does not exist.");
+            }
+        }
 
 
 

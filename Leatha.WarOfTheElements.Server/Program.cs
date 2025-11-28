@@ -1,4 +1,3 @@
-
 using FluentValidation.AspNetCore;
 using Leatha.WarOfTheElements.Common.Communication.Services;
 using Leatha.WarOfTheElements.Server.Objects.Game;
@@ -16,6 +15,7 @@ using MongoDB.Driver;
 using System.Numerics;
 using System.Text;
 using System.Text.Json.Serialization;
+using Leatha.WarOfTheElements.Server.DataAccess;
 
 namespace Leatha.WarOfTheElements.Server
 {
@@ -121,6 +121,7 @@ namespace Leatha.WarOfTheElements.Server
             // Mongo DB.
             {
                 BsonSerializer.RegisterSerializer(new GuidSerializer(GuidRepresentation.Standard));
+                //BsonSerializer.RegisterSerializer(new SystemVector3BsonSerializer());
 
                 services.AddSingleton<IMongoClient>(_ =>
                 {
@@ -134,7 +135,6 @@ namespace Leatha.WarOfTheElements.Server
             {
                 // Scoped.
                 services.AddScoped<IAuthService, AuthService>();
-                services.AddScoped<ISpellService, SpellService>();
 
                 // Singleton.
                 services.AddSingleton<IServerToClientHandler, ServerToClientHandler>();
@@ -143,44 +143,56 @@ namespace Leatha.WarOfTheElements.Server
                 services.AddSingleton<ITemplateService, TemplateService>();
 
                 services.AddSingleton<IPlayerService, PlayerService>();
-                services.AddSingleton<IScriptService, ScriptService>(sp =>
-                {
-                    var templateService = sp.GetRequiredService<ITemplateService>();
-                    var scriptService = new ScriptService(templateService);
+                services.AddSingleton<IScriptService, ScriptService>();
+                services.AddSingleton<IChatService, ChatService>();
+                services.AddSingleton<ISpellService, SpellService>();
+                services.AddSingleton<IColliderArchetypesLoader, ColliderArchetypesLoader>();
+                //services.AddSingleton<IScriptService, ScriptService>(sp =>
+                //{
+                //    var templateService = sp.GetRequiredService<ITemplateService>();
+                //    var scriptService = new ScriptService(templateService);
 
-                    scriptService.LoadNonPlayerScripts();
-                    scriptService.LoadSpellScripts();
-                    scriptService.LoadAuraScripts();
+                //    scriptService.LoadNonPlayerScripts();
+                //    scriptService.LoadSpellScripts();
+                //    scriptService.LoadAuraScripts();
 
-                    return scriptService;
-                });
+                //    return scriptService;
+                //});
 
                 services.AddSingleton<IInputQueueService, InputQueueService>();
                 services.AddSingleton<IGameWorld, GameWorld>();
-                services.AddSingleton<PhysicsWorld>(sp =>
+                services.AddSingleton<PhysicsWorld>(_ =>
                 {
                     var gravity = new Vector3(0, -9.81f, 0);
-                    var physicsWorld = new PhysicsWorld(gravity);
-
-                    // Terrain config (optional, but this is where it hooks in)
-                    var metaPath = configuration["Terrain:MetaPath"];
-                    var heightPath = configuration["Terrain:HeightmapPath"];
-                    var maxHeight = configuration.GetValue("Terrain:MaxHeight", 100f);
-
-                    // #TODO: There must be foreach for different maps later.
-                    if (!string.IsNullOrWhiteSpace(metaPath) &&
-                        !string.IsNullOrWhiteSpace(heightPath) &&
-                        File.Exists(metaPath) &&
-                        File.Exists(heightPath))
-                    {
-                        var terrain = TerrainLoader.Load(metaPath, heightPath, maxHeight);
-                        physicsWorld.AddTerrain(terrain);
-                    }
-                    else
-                        physicsWorld.AddFlatGround(500.0f, 500.0f, 0.0f);
-
-                    return physicsWorld;
+                    return new PhysicsWorld(gravity);
                 });
+                //services.AddSingleton<PhysicsWorld>(sp =>
+                //{
+                //    var gravity = new Vector3(0, -9.81f, 0);
+                //    var physicsWorld = new PhysicsWorld(gravity);
+
+                //    // Terrain config (optional, but this is where it hooks in)
+                //    var metaPath = configuration["Terrain:MetaPath"];
+                //    var heightPath = configuration["Terrain:HeightmapPath"];
+                //    var maxHeight = configuration.GetValue("Terrain:MaxHeight", 100f);
+
+                //    // #TODO: There must be foreach for different maps later.
+                //    if (!string.IsNullOrWhiteSpace(metaPath) &&
+                //        !string.IsNullOrWhiteSpace(heightPath) &&
+                //        File.Exists(metaPath) &&
+                //        File.Exists(heightPath))
+                //    {
+                //        var terrain = TerrainLoader.Load(metaPath, heightPath, maxHeight);
+                //        physicsWorld.AddTerrain(terrain);
+                //    }
+                //    else
+                //        physicsWorld.AddFlatGround(500.0f, 500.0f, 0.0f);
+
+                //    return physicsWorld;
+                //});
+
+                services.AddSingleton<IEventService, EventService>();
+                services.AddHostedService<StartupLoaderService>();
 
                 // Hosted Service.
                 services.AddHostedService<GameLoopBackgroundService>();

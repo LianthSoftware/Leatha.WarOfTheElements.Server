@@ -1,6 +1,7 @@
 ﻿using Leatha.WarOfTheElements.Common.Communication.Transfer;
 using Leatha.WarOfTheElements.Common.Communication.Transfer.Enums;
 using Leatha.WarOfTheElements.Common.Communication.Utilities;
+using Leatha.WarOfTheElements.Common.Environment.Collisions;
 using Leatha.WarOfTheElements.Server.DataAccess.Entities;
 using Leatha.WarOfTheElements.Server.DataAccess.Entities.Templates;
 using Leatha.WarOfTheElements.Server.Demo;
@@ -178,6 +179,64 @@ namespace Leatha.WarOfTheElements.Server.Utilities
                 MapSizeX = entity.MapSizeX,
                 MapSizeY = entity.MapSizeY,
                 MapFlags = entity.MapFlags
+            };
+        }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        public static ColliderArchetypeObject AsTransferObject(this ColliderArchetype entity)
+        {
+            return new ColliderArchetypeObject
+            {
+                Name = entity.Name,
+                ArchetypeName = entity.ArchetypeName,
+                ShapeType = entity.ShapeType,
+                Size = entity.Size,
+                HullVertices = entity.HullVertices,
+                IsStaticDefault = entity.IsStaticDefault
+            };
+        }
+
+        public static EnvironmentInstanceObject AsTransferObject(this EnvironmentInstance entity)
+        {
+            return new EnvironmentInstanceObject
+            {
+                Name = entity.Name,
+                ArchetypeName = entity.ArchetypeName,
+                ShapeType = entity.ShapeType,
+                ColliderSize = entity.ColliderSize,
+                Position = entity.Position,
+                ConvexHullPoints = entity.ConvexHullPoints,
+                MapId = entity.MapId,
+                IsStatic = entity.IsStatic,
+                RotationDegrees = entity.RotationDegrees
+            };
+        }
+
+        public static EnvironmentInstance FromTransferObject(this EnvironmentInstanceObject obj)
+        {
+            return new EnvironmentInstance
+            {
+                Name = obj.Name,
+                ArchetypeName = obj.ArchetypeName,
+                ShapeType = obj.ShapeType,
+                ColliderSize = obj.ColliderSize,
+                Position = obj.Position,
+                ConvexHullPoints = obj.ConvexHullPoints,
+                MapId = obj.MapId,
+                IsStatic = obj.IsStatic,
+                RotationDegrees = obj.RotationDegrees,
             };
         }
     }

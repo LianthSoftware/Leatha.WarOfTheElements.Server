@@ -1,19 +1,36 @@
-﻿using System.Numerics;
+﻿using System.Diagnostics;
+using System.Numerics;
 using Leatha.WarOfTheElements.Common.Communication.Utilities;
 
 namespace Leatha.WarOfTheElements.Server.Objects.Characters.Movement
 {
+    public interface IMovementProcessor
+    {
+        void Process(double delta);
+
+        bool IsRunning();
+
+        void SetRunning(bool isRunning);
+    }
+
     public sealed class MotionMaster
     {
         public MotionMaster(NonPlayerState ownerState)
         {
             OwnerNonPlayer = ownerState;
 
+            _idleMovementProcessor = new IdleMovementProcessor(this);
             _movementProcessor = new MotionMasterMovementProcessor(this);
+            _waypointMovementProcessor = new WaypointMovementProcessor(this);
             _rotationProcessor = new MotionMasterRotationProcessor(this);
+
+            // Set it to the idle.
+            CurrentMovementProcessor = _idleMovementProcessor;
         }
 
         public NonPlayerState OwnerNonPlayer { get; }
+
+        public IMovementProcessor CurrentMovementProcessor { get; private set; }
 
         /// <summary>
         /// Local input-style velocity: X = strafe, Y = forward, Z unused.
@@ -23,12 +40,16 @@ namespace Leatha.WarOfTheElements.Server.Objects.Characters.Movement
 
         public bool IsMoving => Velocity.LengthSquared() > 0;
 
+        private readonly IdleMovementProcessor _idleMovementProcessor;
         private readonly MotionMasterMovementProcessor _movementProcessor;
+        private readonly WaypointMovementProcessor _waypointMovementProcessor;
         private readonly MotionMasterRotationProcessor _rotationProcessor;
 
         public void Update(double delta)
         {
-            _movementProcessor.Process(delta);
+            //_movementProcessor.Process(delta);
+
+            CurrentMovementProcessor.Process(delta);
             _rotationProcessor.Process(delta);
         }
 
@@ -53,8 +74,10 @@ namespace Leatha.WarOfTheElements.Server.Objects.Characters.Movement
 
         public void MoveWaypoints(List<WaypointData> waypoints, bool repeat, bool isWalking = true)
         {
-            _movementProcessor.SetWalking(isWalking);
-            _movementProcessor.MoveWaypoints(waypoints, repeat);
+            //_movementProcessor.SetWalking(isWalking);
+            //_movementProcessor.MoveWaypoints(waypoints, repeat);
+            CurrentMovementProcessor = _waypointMovementProcessor;
+            _waypointMovementProcessor.MoveWaypoints(waypoints, repeat);
         }
 
         public void RotateTo(Vector3 position)
@@ -107,8 +130,203 @@ namespace Leatha.WarOfTheElements.Server.Objects.Characters.Movement
         public int DelayMax { get; set; }
     }
 
+    public sealed class IdleMovementProcessor : IMovementProcessor
+    {
+        public IdleMovementProcessor(MotionMaster motionMaster)
+        {
+            _motionMaster = motionMaster;
+        }
 
-    public sealed class MotionMasterMovementProcessor
+        private readonly MotionMaster _motionMaster;
+
+        public void Process(double delta)
+        {
+            // Nothing to do, does not move at all.
+        }
+
+        public bool IsRunning()
+        {
+            return false;
+        }
+
+        public void SetRunning(bool isRunning)
+        {
+            // Nothing to do, does not move at all.
+        }
+    }
+
+    public sealed class WaypointMovementProcessor : IMovementProcessor
+    {
+        public WaypointMovementProcessor(MotionMaster motionMaster)
+        {
+            _motionMaster = motionMaster;
+        }
+
+        private readonly MotionMaster _motionMaster;
+
+        private Vector3? _moveTargetPosition;
+        private bool _isWalking;
+
+        private readonly List<WaypointData> _waypoints = new();
+        private int _waypointIndex = -1;
+        private bool _repeatWaypoints;
+
+        private double? _waitDelay; // seconds
+
+        // Be a little more generous; too small can cause “never reached”.
+        private const float ArriveDistance = 0.5f;
+
+        public void Process(double delta)
+        {
+            // Local intent each tick
+            _motionMaster.Velocity = Vector3.Zero;
+
+            if (CheckWaitDelay(delta))
+                return;
+
+            ProcessMoveToTarget(delta);
+        }
+
+        public bool IsRunning()
+        {
+            return false;
+        }
+
+        public void SetRunning(bool isRunning)
+        {
+            // Nothing to do, does not move at all.
+        }
+
+        public void MoveWaypoints(List<WaypointData> waypoints, bool repeat)
+        {
+            _waypoints.Clear();
+            _waypoints.AddRange(waypoints);
+
+            if (_waypoints.Count == 0)
+            {
+                Reset();
+                return;
+            }
+
+            _repeatWaypoints = repeat;
+            _waypointIndex = 0;
+            _waitDelay = null;
+
+            var wp = _waypoints[_waypointIndex];
+            _moveTargetPosition = new Vector3(wp.PositionX, wp.PositionY, wp.PositionZ);
+        }
+
+        private void Reset()
+        {
+            _waypoints.Clear();
+            _repeatWaypoints = false;
+            _waypointIndex = -1;
+            _waitDelay = null;
+            _moveTargetPosition = null;
+        }
+
+        private void ProcessMoveToTarget(double delta)
+        {
+            if (!_moveTargetPosition.HasValue)
+                return;
+
+            var owner = _motionMaster.OwnerNonPlayer;
+            var currentPos = owner.Position;
+
+            var toTarget = _moveTargetPosition.Value - currentPos;
+            //toTarget.Y = 0f; // #TODO
+
+            var sqDist = toTarget.LengthSquared();
+            if (sqDist <= ArriveDistance * ArriveDistance)
+            {
+                // We’ve arrived at this target
+                AdvanceWaypoint();
+                return;
+            }
+
+            // Move towards target
+            var worldDir = Vector3.Normalize(toTarget);
+
+            var yaw = owner.Yaw;
+            var sin = MathF.Sin(yaw);
+            var cos = MathF.Cos(yaw);
+
+            var forward = new Vector3(-sin, 0f, -cos);
+            var right = new Vector3(cos, 0f, -sin);
+
+            var localForward = Vector3.Dot(worldDir, forward);
+            var localRight = Vector3.Dot(worldDir, right);
+
+            var localMove = new Vector3(localRight, localForward, 0f);
+            if (localMove.LengthSquared() > 1f)
+                localMove = Vector3.Normalize(localMove);
+
+            _motionMaster.Velocity = localMove;
+        }
+
+        private bool CheckWaitDelay(double delta)
+        {
+            if (!_waitDelay.HasValue)
+                return false;
+
+            if (_waitDelay <= 0)
+            {
+                _waitDelay = null;
+                return false;
+            }
+
+            _waitDelay -= delta;
+            return true;
+        }
+
+        private void AdvanceWaypoint()
+        {
+            if (_waypointIndex < 0 || _waypointIndex >= _waypoints.Count)
+            {
+                _moveTargetPosition = null;
+                return;
+            }
+
+            var waypoint = _waypoints[_waypointIndex];
+
+            // Let the script know we reached this one
+            _motionMaster.OwnerNonPlayer.Script?.OnWaypointReached(_waypointIndex);
+
+            _waypointIndex++;
+
+            var end = _waypointIndex >= _waypoints.Count;
+            if (end)
+            {
+                if (!_repeatWaypoints)
+                {
+                    _waypointIndex = -1;
+                    _moveTargetPosition = null;
+                    return;
+                }
+
+                // Loop back
+                _waypointIndex = 0;
+            }
+
+            var next = _waypoints[_waypointIndex];
+            var delayMs = CommonExtensions.Random(next.DelayMin, next.DelayMax);
+
+            if (delayMs <= 0)
+            {
+                _moveTargetPosition = new Vector3(next.PositionX, next.PositionY, next.PositionZ);
+            }
+            else
+            {
+                _waitDelay = delayMs / 1000.0; // ms -> seconds
+                _moveTargetPosition = null;
+            }
+
+            _waitDelay = delayMs > 0 ? delayMs / 1000.0 : 0.0f;
+            _moveTargetPosition = new Vector3(next.PositionX, next.PositionY, next.PositionZ);
+        }
+    }
+
+    public sealed class MotionMasterMovementProcessor : IMovementProcessor
     {
         public MotionMasterMovementProcessor(MotionMaster motionMaster)
         {
@@ -147,6 +365,16 @@ namespace Leatha.WarOfTheElements.Server.Objects.Characters.Movement
             {
                 ProcessMoveToTarget(delta);
             }
+        }
+
+        public bool IsRunning()
+        {
+            throw new NotImplementedException();
+        }
+
+        public void SetRunning(bool isRunning)
+        {
+            throw new NotImplementedException();
         }
 
         private void ProcessMoveToTarget(double delta)
@@ -305,7 +533,7 @@ namespace Leatha.WarOfTheElements.Server.Objects.Characters.Movement
         }
     }
 
-    public sealed class MotionMasterRotationProcessor
+    public sealed class MotionMasterRotationProcessor : IMovementProcessor
     {
         public MotionMasterRotationProcessor(MotionMaster motionMaster)
         {
@@ -355,6 +583,16 @@ namespace Leatha.WarOfTheElements.Server.Objects.Characters.Movement
 
             if (MathF.Abs(NormalizeAngle(targetYaw - newYaw)) < 0.01f)
                 Reset();
+        }
+
+        public bool IsRunning()
+        {
+            throw new NotImplementedException();
+        }
+
+        public void SetRunning(bool isRunning)
+        {
+            throw new NotImplementedException();
         }
 
         public void RotateTo(Vector3 position)

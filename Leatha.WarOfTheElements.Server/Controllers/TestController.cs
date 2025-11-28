@@ -1,15 +1,20 @@
 ﻿using Leatha.WarOfTheElements.Common.Communication.Messages;
+using Leatha.WarOfTheElements.Common.Communication.Services;
 using Leatha.WarOfTheElements.Common.Communication.Transfer;
+using Leatha.WarOfTheElements.Common.Environment.Collisions;
 using Leatha.WarOfTheElements.Server.DataAccess.Entities;
 using Leatha.WarOfTheElements.Server.Objects.Game;
 using Leatha.WarOfTheElements.Server.Services;
 using Leatha.WarOfTheElements.Server.Utilities;
 using Leatha.WarOfTheElements.World.Physics;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Json;
 using Microsoft.AspNetCore.Mvc;
 using MongoDB.Driver;
 using System.Diagnostics;
-using Leatha.WarOfTheElements.Common.Communication.Services;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Leatha.WarOfTheElements.Server.DataAccess.Entities.Templates;
 
 namespace Leatha.WarOfTheElements.Server.Controllers
 {
@@ -124,6 +129,38 @@ namespace Leatha.WarOfTheElements.Server.Controllers
         {
             if (_gameWorld.GetPlayerState(playerId) is { } state)
                 state.Resources.Health = health;
+
+            return Ok();
+        }
+
+
+
+
+
+
+        [HttpPost("environment/instances/create/{mapId:int:required}/{filePath:required}")]
+        [ProducesResponseType(typeof(List<MapInfoObject>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetMapTemplatesAsync(string filePath, int mapId)
+        {
+            var data = await System.IO.File.ReadAllTextAsync(filePath);
+            var instances = JsonSerializer.Deserialize<EnvironmentExport>(data, new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                IncludeFields = true,
+                Converters =
+                {
+                    new JsonStringEnumConverter()
+                }
+            });
+
+            if (instances == null)
+                return BadRequest("A");
+
+            await _mongoGameDatabase.GetMongoCollection<EnvironmentInstance>()
+                .DeleteManyAsync(i => i.MapId == mapId);
+
+            await _mongoGameDatabase.GetMongoCollection<EnvironmentInstance>()
+                .InsertManyAsync(instances.Instances.Select(i => i.FromTransferObject()));
 
             return Ok();
         }

@@ -16,5 +16,7 @@ namespace Leatha.WarOfTheElements.Common.Communication.Services
         Task SendAuraApply(AuraObject auraObject, ICharacterStateObject target);
 
         Task SendAuraRemove(AuraObject auraObject, ICharacterStateObject target);
+
+        Task Talk(ChatMessageObject chatMessage, List<Guid> accountIds);
     }
 }

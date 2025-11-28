@@ -38,6 +38,17 @@ namespace Leatha.WarOfTheElements.Server.Services
 
 
 
+        Task<List<GameObjectTemplate>> GetGameObjectTemplatesAsync();
+
+        Task<GameObjectTemplate?> GetGameObjectTemplateAsync(int nonPlayerId);
+
+
+        Task<List<GameObjectSpawnTemplate>> GetGameObjectSpawnTemplatesAsync();
+
+        Task<List<GameObjectSpawnTemplate>> GetGameObjectSpawnTemplatesAsync(int nonPlayerId);
+
+
+
         Task ReloadTemplatesAsync();
 
 
@@ -54,6 +65,10 @@ namespace Leatha.WarOfTheElements.Server.Services
         Task<List<NonPlayerTemplate>> CreateNonPlayerTemplatesAsync();
 
         Task<List<NonPlayerSpawnTemplate>> CreateNonPlayerSpawnTemplatesAsync();
+
+        Task<List<GameObjectTemplate>> CreateGameObjectTemplatesAsync();
+
+        Task<List<GameObjectSpawnTemplate>> CreateGameObjectSpawnTemplatesAsync();
     }
 
     public sealed class TemplateService : ITemplateService
@@ -70,6 +85,8 @@ namespace Leatha.WarOfTheElements.Server.Services
         private readonly ConcurrentBag<AuraTemplate> _auraTemplates = [];
         private readonly ConcurrentBag<NonPlayerTemplate> _nonPlayerTemplates = [];
         private readonly ConcurrentBag<NonPlayerSpawnTemplate> _nonPlayerSpawnTemplates = [];
+        private readonly ConcurrentBag<GameObjectTemplate> _gameObjectTemplates = [];
+        private readonly ConcurrentBag<GameObjectSpawnTemplate> _gameObjectSpawnTemplates = [];
 
         public async Task<List<MapTemplate>> GetMapTemplatesAsync()
         {
@@ -227,6 +244,63 @@ namespace Leatha.WarOfTheElements.Server.Services
             return templates;
         }
 
+        public async Task<List<GameObjectTemplate>> GetGameObjectTemplatesAsync()
+        {
+            var filter = Builders<GameObjectTemplate>.Filter.Empty;
+            var templates = await _mongoGameDatabase.GetMongoCollection<GameObjectTemplate>()
+                .Find(filter)
+                .ToListAsync();
+
+            _gameObjectTemplates.Clear();
+            foreach (var template in templates)
+                _gameObjectTemplates.Add(template);
+
+            return templates;
+        }
+
+        public async Task<GameObjectTemplate?> GetGameObjectTemplateAsync(int gameObjectId)
+        {
+            // First, try to get from cache.
+            var cacheTemplate = _gameObjectTemplates.SingleOrDefault(i => i.GameObjectId == gameObjectId);
+            if (cacheTemplate != null)
+                return cacheTemplate;
+
+            var filter = Builders<GameObjectTemplate>.Filter.Eq(i => i.GameObjectId, gameObjectId);
+            var template = await _mongoGameDatabase.GetMongoCollection<GameObjectTemplate>()
+                .Find(filter)
+                .SingleOrDefaultAsync();
+
+            // Add to cache.
+            if (template != null)
+                _gameObjectTemplates.Add(template);
+
+            return template;
+        }
+
+        public async Task<List<GameObjectSpawnTemplate>> GetGameObjectSpawnTemplatesAsync()
+        {
+            var filter = Builders<GameObjectSpawnTemplate>.Filter.Empty;
+            var templates = await _mongoGameDatabase.GetMongoCollection<GameObjectSpawnTemplate>()
+                .Find(filter)
+                .ToListAsync();
+
+            _gameObjectSpawnTemplates.Clear();
+            foreach (var template in templates)
+                _gameObjectSpawnTemplates.Add(template);
+
+            return templates;
+        }
+
+        public async Task<List<GameObjectSpawnTemplate>> GetGameObjectSpawnTemplatesAsync(int gameObjectId)
+        {
+            var filter = Builders<GameObjectSpawnTemplate>.Filter.Eq(i => i.GameObjectId, gameObjectId);
+            var templates = await _mongoGameDatabase.GetMongoCollection<GameObjectSpawnTemplate>()
+                .Find(filter)
+                .ToListAsync();
+
+            return templates;
+        }
+
         public async Task ReloadTemplatesAsync()
         {
             // Cache is cleared inside each call.
@@ -236,6 +310,8 @@ namespace Leatha.WarOfTheElements.Server.Services
                 await GetAuraTemplatesAsync();
                 await GetNonPlayerTemplatesAsync();
                 await GetNonPlayerSpawnTemplatesAsync();
+                await GetGameObjectTemplatesAsync();
+                await GetGameObjectSpawnTemplatesAsync();
             }
         }
 
@@ -246,6 +322,8 @@ namespace Leatha.WarOfTheElements.Server.Services
             await CreateAuraTemplatesAsync();
             await CreateNonPlayerTemplatesAsync();
             await CreateNonPlayerSpawnTemplatesAsync();
+            await CreateGameObjectTemplatesAsync();
+            await CreateGameObjectSpawnTemplatesAsync();
         }
 
         public async Task<List<SpellTemplate>> CreateSpellTemplatesAsync()
@@ -586,11 +664,11 @@ namespace Leatha.WarOfTheElements.Server.Services
                         NextRankSpellId = null,
                     },
                     CastTime = 0,
-                    Cooldown = 5000,
+                    Cooldown = 1000,
                     Duration = 10000,
                     ElementChakraCosts = new Dictionary<ElementTypes, int>
                     {
-                        { ElementTypes.Fire, 30 }
+                        { ElementTypes.Fire, 10 }
                     },
                     ElementTypes = ElementTypes.Fire,
                     SpellEffects = new List<SpellEffectObject>
@@ -788,6 +866,17 @@ namespace Leatha.WarOfTheElements.Server.Services
             {
                 new MapTemplate
                 {
+                    MapId = 1,
+                    MapName = "Initial Player Creation Spawn Map",
+                    MapDescription = "The place in an unknown time or space where new players are spawned.",
+                    MapPath = "res://scenes/maps/initial_player_spawn_map.tscn",
+                    MapSizeX = 100,
+                    MapSizeY = 100,
+                },
+
+                // *** TEST MAPS (Not Production) ***
+                new MapTemplate
+                {
                     MapId = 1000,
                     MapName = "Movement Test Map",
                     MapDescription = "Map used to test movement and basic terrain detection.",
@@ -846,9 +935,8 @@ namespace Leatha.WarOfTheElements.Server.Services
                 new NonPlayerSpawnTemplate
                 {
                     NonPlayerId = 1,
-                    MapId = 1000,
-                    InstanceId = null,
-                    SpawnPosition = new Vector3(5.0f, 1.4f, 5.0f),
+                    MapId = 1,
+                    SpawnPosition = new Vector3(5.0f, 2.4f, 5.0f),
                     Orientation = Quaternion.Identity,
                 },
             };
@@ -857,6 +945,96 @@ namespace Leatha.WarOfTheElements.Server.Services
                 .DeleteManyAsync(Builders<NonPlayerSpawnTemplate>.Filter.Empty);
 
             await _mongoGameDatabase.GetMongoCollection<NonPlayerSpawnTemplate>()
+                .InsertManyAsync(templates);
+
+            return templates;
+        }
+
+        public async Task<List<GameObjectTemplate>> CreateGameObjectTemplatesAsync()
+        {
+            var templates = new List<GameObjectTemplate>
+            {
+                new GameObjectTemplate
+                {
+                    GameObjectId = 1,
+                    Name = "Fire Element Core",
+                },
+                new GameObjectTemplate
+                {
+                    GameObjectId = 2,
+                    Name = "Air Element Core",
+                },
+                new GameObjectTemplate
+                {
+                    GameObjectId = 3,
+                    Name = "Lightning Element Core",
+                },
+                new GameObjectTemplate
+                {
+                    GameObjectId = 4,
+                    Name = "Nature Element Core",
+                },
+                new GameObjectTemplate
+                {
+                    GameObjectId = 5,
+                    Name = "Water Element Core",
+                },
+            };
+
+            await _mongoGameDatabase.GetMongoCollection<GameObjectTemplate>()
+                .DeleteManyAsync(Builders<GameObjectTemplate>.Filter.Empty);
+
+            await _mongoGameDatabase.GetMongoCollection<GameObjectTemplate>()
+                .InsertManyAsync(templates);
+
+            return templates;
+        }
+
+        public async Task<List<GameObjectSpawnTemplate>> CreateGameObjectSpawnTemplatesAsync()
+        {
+            var templates = new List<GameObjectSpawnTemplate>
+            {
+                new GameObjectSpawnTemplate
+                {
+                    GameObjectId = 1,
+                    MapId = 1,
+                    SpawnPosition = new Vector3(17.0f, 0f, 25.0f),
+                    Orientation = Quaternion.Identity,
+                },
+                new GameObjectSpawnTemplate
+                {
+                    GameObjectId = 2,
+                    MapId = 1,
+                    SpawnPosition = new Vector3(-17.0f, 0f, 25.0f),
+                    Orientation = Quaternion.Identity,
+                },
+                new GameObjectSpawnTemplate
+                {
+                    GameObjectId = 3,
+                    MapId = 1,
+                    SpawnPosition = new Vector3(-25.0f, 0f, 0.0f),
+                    Orientation = Quaternion.Identity,
+                },
+                new GameObjectSpawnTemplate
+                {
+                    GameObjectId = 4,
+                    MapId = 1,
+                    SpawnPosition = new Vector3(-18.0f, 0f, -25.0f),
+                    Orientation = Quaternion.Identity,
+                },
+                new GameObjectSpawnTemplate
+                {
+                    GameObjectId = 5,
+                    MapId = 1,
+                    SpawnPosition = new Vector3(17.0f, 0f, -25.0f),
+                    Orientation = Quaternion.Identity,
+                },
+            };
+
+            await _mongoGameDatabase.GetMongoCollection<GameObjectSpawnTemplate>()
+                .DeleteManyAsync(Builders<GameObjectSpawnTemplate>.Filter.Empty);
+
+            await _mongoGameDatabase.GetMongoCollection<GameObjectSpawnTemplate>()
                 .InsertManyAsync(templates);
 
             return templates;
