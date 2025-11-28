@@ -48,6 +48,17 @@ namespace Leatha.WarOfTheElements.Server.Services
             return TransferMessage.CreateMessage(player);
         }
 
+        public async Task<TransferMessage<Player>> GetPlayerByAccountIdAsync(Guid accountId)
+        {
+            var filter = Builders<Player>.Filter.Eq(i => i.AccountId, accountId);
+
+            var player = await _mongoAuthDatabase.GetCollection<Player>(nameof(Player))
+                .Find(filter)
+                .SingleOrDefaultAsync();
+
+            return TransferMessage.CreateMessage(player);
+        }
+
         //public async Task<TransferMessage<Player>> GetPlayerAsync(Guid playerId, int serverId)
         //{
         //    // #TODO

@@ -323,13 +323,6 @@ namespace Leatha.WarOfTheElements.World.Physics
 
                 _staticBodies[Guid.NewGuid()] = handle;
 
-                var aaa = JsonSerializer.Serialize(instance, new JsonSerializerOptions
-                {
-                    WriteIndented = true,
-                    IncludeFields = true,
-                });
-                Debug.WriteLine($"[AddEnvironmentObject]: Position: { pose.Position } | Orientation: { pose.Orientation } | JSON: { aaa }");
-
                 return handle;
             }
         }
@@ -364,6 +357,104 @@ namespace Leatha.WarOfTheElements.World.Physics
                     return _simulation.Shapes.Add(cylinder);
                 default:
                     throw new InvalidOperationException("Shape does not exist.");
+            }
+        }
+
+
+
+
+        public Vector3 MovePlayerDynamic(
+            Guid playerId,
+            Vector3 currentVelocity,
+            Vector3 desiredVelocity, // X/Z from ComputeDesiredVelocity
+            float dt,
+            bool jump,
+            bool wasOnGround,
+            float jumpImpulse,
+            out bool isOnGround,
+            float gravityY = DefaultGravityY)
+        {
+            lock (_simLock)
+            {
+                isOnGround = wasOnGround;
+
+                if (!_playerBodies.TryGetValue(playerId, out var handle))
+                    return currentVelocity;
+
+                var body = _simulation.Bodies.GetBodyReference(handle);
+
+                var beforePos = body.Pose.Position;
+                var beforeVel = body.Velocity.Linear;
+
+                Debug.WriteLine(
+                    $"[PHYS-IN] pos=<{beforePos.X:0.00},{beforePos.Y:0.00},{beforePos.Z:0.00}> " +
+                    $"vel=<{beforeVel.X:0.00},{beforeVel.Y:0.00},{beforeVel.Z:0.00}> " +
+                    $"desired=<{desiredVelocity.X:0.00},{desiredVelocity.Y:0.00},{desiredVelocity.Z:0.00}>");
+
+                // Read authoritative velocity from the physics body.
+                var v = body.Velocity.Linear;
+
+                // ========== 2) Ground detection ==========
+                var pos = body.Pose.Position;
+
+                var surfaceY = _terrain is { } terrain
+                    ? SampleTerrainHeight(pos.X, pos.Z, terrain)
+                    : _groundY;
+
+                var bottomOffset = 0f;
+                var shapeIndex = body.Collidable.Shape;
+                if (shapeIndex.Exists)
+                {
+                    ref var capsule = ref _simulation.Shapes.GetShape<Capsule>(shapeIndex.Index);
+                    bottomOffset = capsule.Radius + capsule.HalfLength;
+                }
+
+                var bottomY = pos.Y - bottomOffset;
+                const float groundedEpsilon = 0.05f;
+
+                isOnGround = bottomY <= surfaceY + groundedEpsilon;
+
+                // ========== 1) Horizontal movement control (AFTER ground detection) ==========
+
+                // Is there any horizontal input?
+                var hasHorizontalInput =
+                    desiredVelocity.X * desiredVelocity.X +
+                    desiredVelocity.Z * desiredVelocity.Z > 0.0001f;
+
+                // - On ground: always follow desiredVelocity (full control).
+                // - In air:
+                //    - With input: allow steering.
+                //    - Without input: keep existing v.X/Z (air momentum).
+                if (isOnGround && hasHorizontalInput)
+                //if (isOnGround || hasHorizontalInput)
+                {
+                    v.X = desiredVelocity.X;
+                    v.Z = desiredVelocity.Z;
+                }
+                // else: keep v.X / v.Z as is (momentum)
+
+
+                // ========== 3) Jump ==========
+                // Use wasOnGround to avoid double-jumps from transient ground detection.
+                if (jump && wasOnGround && isOnGround && v.Y <= 0f)
+                {
+                    v.Y = jumpImpulse;
+                    isOnGround = false; // we're now in the air
+                }
+
+                // ========== 4) Gravity ==========
+                // NOTE: You already apply gravity in SimplePoseIntegratorCallbacks,
+                // so this should stay commented out to avoid double-gravity.
+                // v.Y += gravityY * dt;
+
+                // ========== 5) Write velocity, don't touch pose ==========
+                body.Velocity.Linear = v;
+                body.Awake = true; // or: _simulation.Awakener.AwakenBody(handle);
+
+                Debug.WriteLine(
+                    $"[PHYS-OUT] vel=<{v.X:0.00},{v.Y:0.00},{v.Z:0.00}> jump={jump} wasGround={wasOnGround}");
+
+                return v;
             }
         }
 

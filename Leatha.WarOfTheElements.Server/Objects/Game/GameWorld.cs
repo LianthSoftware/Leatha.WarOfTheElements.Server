@@ -27,6 +27,8 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
 
         ConcurrentDictionary<Guid, NonPlayerState> NonPlayers { get; }
 
+        ConcurrentDictionary<Guid, GameObjectState> GameObjects { get; }
+
         ConcurrentDictionary<Guid, Spell> Spells { get; }
 
         ConcurrentDictionary<Guid, Aura> Auras { get; }
@@ -43,6 +45,8 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
 
 
         PlayerState? GetPlayerState(Guid playerId);
+
+        PlayerState? GetPlayerStateByAccountId(Guid accountId);
 
         PlayerState? RemovePlayerState(Guid playerId);
 
@@ -114,6 +118,8 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
 
         public ConcurrentDictionary<Guid, Aura> Auras { get; } = new();
 
+        private readonly Dictionary<int, LoadedMapInfo> _loadedMaps = [];
+
         private readonly IMongoDatabase _mongoGameDatabase;
         private readonly IGameHubService _gameHubService;
         private readonly PhysicsWorld _physicsWorld;
@@ -177,6 +183,12 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
             return Players.GetValueOrDefault(playerId);
         }
 
+        public PlayerState? GetPlayerStateByAccountId(Guid accountId)
+        {
+            // Only one player on one account should be at the list.
+            return Players.Values.SingleOrDefault(p => p.AccountId == accountId);
+        }
+
         public PlayerState? RemovePlayerState(Guid playerId)
         {
             if (Players.Remove(playerId, out var state))
@@ -217,8 +229,6 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
             // Add it to SignalR group.
             await _gameHubService.AddToMapGroup(playerState.AccountId, playerState.MapId, playerState.InstanceId);
         }
-
-        private Dictionary<int, LoadedMapInfo> _loadedMaps = [];
 
         private async Task LoadMapAsync(int mapId)
         {
@@ -317,6 +327,12 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
                     }
                 }
             }
+
+            _loadedMaps.Add(mapId, new LoadedMapInfo
+            {
+                MapId = mapId,
+                InstanceId = null
+            });
         }
 
         public sealed class LoadedMapInfo
@@ -419,18 +435,47 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
                 // Y is controlled by our kinematic controller (jump + gravity).
                 var desiredVelocity = playerState.ComputeDesiredVelocity(input, fixedDelta);
 
+                // 🔍 DEBUG: show input + desired
+                Debug.WriteLine(
+                    $"[INPUT] player={playerState.CharacterName} seq={input.Sequence} " +
+                    $"F={input.Forward:0.00} R={input.Right:0.00} " +
+                    $"Yaw={input.Yaw:0.00} -> desired=<{desiredVelocity.X:0.00},{desiredVelocity.Y:0.00},{desiredVelocity.Z:0.00}>");
+
+
+
                 // Combine kinematic horizontal + kinematic vertical (jump + gravity).
                 // We treat playerState.Velocity as the authoritative gameplay velocity.
-                var newVelocity = _physicsWorld.MovePlayerKinematic(
+                //var newVelocity = _physicsWorld.MovePlayerKinematic(
+                //    input.PlayerId,
+                //    playerState.Velocity,   // current gameplay velocity
+                //    desiredVelocity,        // desired horizontal (X/Z)
+                //    (float)fixedDelta,
+                //    input.Jump,
+                //    playerState.IsOnGround, // grounded from previous tick
+                //    PlayerState.JumpImpulse);
+
+                //playerState.Velocity = newVelocity;
+
+
+
+
+
+
+                var newVelocity = _physicsWorld.MovePlayerDynamic(
                     input.PlayerId,
-                    playerState.Velocity,   // current gameplay velocity
-                    desiredVelocity,        // desired horizontal (X/Z)
+                    playerState.Velocity,          // current gameplay velocity (can be ignored inside)
+                    desiredVelocity,               // desired X/Z
                     (float)fixedDelta,
                     input.Jump,
-                    playerState.IsOnGround, // grounded from previous tick
-                    PlayerState.JumpImpulse);
+                    playerState.IsOnGround,        // last frame grounded info (used only for jump gating)
+                    PlayerState.JumpImpulse,
+                    out var isOnGround);
 
+                playerState.IsOnGround = isOnGround;
                 playerState.Velocity = newVelocity;
+
+                Debug.WriteLine(
+                    $"[INPUT] after MovePlayerDynamic vel=<{newVelocity.X:0.00},{newVelocity.Y:0.00},{newVelocity.Z:0.00}> IsOnGround={isOnGround}");
 
                 //if (newVelocity.Y > 0)
                 //    Debug.WriteLine("Velocity Y > 0 (jump applied)");
@@ -607,6 +652,11 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
                 // NOTE: Velocity is managed by our kinematic controller;
                 // do NOT overwrite it with Bepu's internal velocity here.
                 playerState.IsOnGround = grounded;
+
+                if (playerState.WorldObjectId.IsPlayer())
+                    Debug.WriteLine(
+                        $"[SYNC] {playerState.CharacterName} pos=<{position.X:0.00},{position.Y:0.00},{position.Z:0.00}> " +
+                        $"grounded={grounded}");
 
                 playerState.Orientation =
                     Quaternion.CreateFromAxisAngle(Vector3.UnitY, playerState.Yaw);

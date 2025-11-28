@@ -1,15 +1,16 @@
-﻿using System.Diagnostics;
-using System.Numerics;
-using System.Text.Json;
-using Leatha.WarOfTheElements.Common.Communication.Messages;
+﻿using Leatha.WarOfTheElements.Common.Communication.Messages;
 using Leatha.WarOfTheElements.Common.Communication.Services;
 using Leatha.WarOfTheElements.Common.Communication.Transfer;
 using Leatha.WarOfTheElements.Common.Communication.Transfer.Enums;
+using Leatha.WarOfTheElements.Server.DataAccess.Entities;
 using Leatha.WarOfTheElements.Server.Objects.Game;
 using Leatha.WarOfTheElements.Server.Utilities;
 using Leatha.WarOfTheElements.World.Physics;
 using Microsoft.AspNetCore.SignalR;
 using OneOf.Types;
+using System.Diagnostics;
+using System.Numerics;
+using System.Text.Json;
 
 namespace Leatha.WarOfTheElements.Server.Services
 {
@@ -59,7 +60,7 @@ namespace Leatha.WarOfTheElements.Server.Services
             if (!Guid.TryParse(accountIdClaim, out var accountId))
                 return;
 
-            //await ExitWorld(accountId); // #TODO: Is this correct?
+            await ExitWorld(accountId); // #TODO: Is this correct?
 
             await _presenceTracker.TrackDisconnected(accountId.ToString(), Context.ConnectionId);
             await base.OnDisconnectedAsync(exception);
@@ -87,7 +88,9 @@ namespace Leatha.WarOfTheElements.Server.Services
                     playerResult.ErrorMessage!);
             }
 
-            var playerState = await _playerService.GetOrCreatePlayerStateAsync(playerResult.Data.AccountId, playerId);
+            var playerState = await _playerService.GetOrCreatePlayerStateAsync(
+                playerResult.Data.AccountId,
+                playerId);
 
             // Reset last processed input.
             playerState.LastProcessedInputSeq = 0;
@@ -116,17 +119,24 @@ namespace Leatha.WarOfTheElements.Server.Services
             return TransferMessage.CreateMessage(result);
         }
 
-        public async Task<TransferMessage> ExitWorld(Guid playerId)
+        public async Task<TransferMessage> ExitWorld(Guid accountId)
         {
-            var playerResult = await _playerService.GetPlayerAsync(playerId);
-            if (playerResult.IsError || playerResult.Data == null)
+            
+            //var playerResult = await _playerService.GetPlayerAsync(playerId);
+            //if (playerResult.IsError || playerResult.Data == null)
+            //{
+            //    return TransferMessage.CreateErrorMessage<PlayerStateObject>(
+            //        playerResult.ErrorTitle!,
+            //        playerResult.ErrorMessage!);
+            //}
+
+            var playerState = _gameWorld.GetPlayerStateByAccountId(accountId);
+            if (playerState == null)
             {
                 return TransferMessage.CreateErrorMessage<PlayerStateObject>(
-                    playerResult.ErrorTitle!,
-                    playerResult.ErrorMessage!);
+                    "PlayerState was not found.", 
+                    $"Player under account \"{ accountId }\" was not found or is not online.");
             }
-
-            var playerState = _gameWorld.GetPlayerState(playerId);
 
             await _gameWorld.RemovePlayerFromWorldAsync(playerState);
             //if (state != null)
@@ -140,7 +150,7 @@ namespace Leatha.WarOfTheElements.Server.Services
             //_physicsWorld.RemovePlayer(playerId);
             //_gameWorld.RemovePlayerState(playerId);
 
-            Debug.WriteLine($"Player \"{playerResult.Data.PlayerName}\" ({playerId}) removed from the world.");
+            Debug.WriteLine($"Player \"{ playerState.CharacterName}\" ({ playerState.PlayerId }) removed from the world.");
 
             return TransferMessage.CreateMessage();
         }
