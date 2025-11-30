@@ -10,6 +10,10 @@ namespace Leatha.WarOfTheElements.Server.DataAccess.Entities.Templates
 
         public int ColliderArchetypeId { get; set; }
 
+        public string SceneName { get; set; } = null!;
+
         public string? ScriptName { get; set; }
+
+        //public Dictionary<string, object> AdditionalProperties { get; set; } = [];
     }
 }

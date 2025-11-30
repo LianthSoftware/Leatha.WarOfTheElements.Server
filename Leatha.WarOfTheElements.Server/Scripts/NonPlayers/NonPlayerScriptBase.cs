@@ -5,6 +5,7 @@ using Leatha.WarOfTheElements.Server.Objects.Characters;
 using Leatha.WarOfTheElements.Server.Objects.Game;
 using System.Diagnostics;
 using System.Numerics;
+using Leatha.WarOfTheElements.Server.Objects.GameObjects;
 
 namespace Leatha.WarOfTheElements.Server.Scripts.NonPlayers
 {
@@ -72,6 +73,22 @@ namespace Leatha.WarOfTheElements.Server.Scripts.NonPlayers
 
         }
 
+
+
+        public Task<GameObjectState?> SpawnGameObjectAsync(int gameObjectId, Vector3 position, Quaternion orientation)
+        {
+            return _gameWorld.AddGameObjectToWorldAsync(
+                gameObjectId,
+                State.MapId,
+                State.InstanceId,
+                position,
+                orientation);
+        }
+
+        public Task SetGameObjectState(WorldObjectId gameObjectId, GameObjectStateType stateType, Dictionary<string, object>? stateParameters = null)
+        {
+            return _gameWorld.SetGameObjectStateAsync(gameObjectId, stateType, stateParameters);
+        }
 
 
 

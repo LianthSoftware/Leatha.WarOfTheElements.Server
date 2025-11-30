@@ -6,6 +6,8 @@ using Leatha.WarOfTheElements.Server.Objects.Characters;
 using Leatha.WarOfTheElements.Server.Objects.Characters.Movement;
 using SixLabors.ImageSharp;
 using System.Diagnostics;
+using System.Numerics;
+using Leatha.WarOfTheElements.Common.Communication.Transfer.Enums;
 
 namespace Leatha.WarOfTheElements.Server.Scripts.NonPlayers
 {
@@ -48,6 +50,15 @@ namespace Leatha.WarOfTheElements.Server.Scripts.NonPlayers
             new EventDataInfo { Id = 22, Phase = 7, DelayMs = 6500, Text = "Good luck!", MessageType = ChatMessageType.Whisper},
         };
 
+        private readonly Dictionary<int, (ElementTypes Element, Vector3 Position)> _elementGameObjects = new()
+        {
+            { 1, ( ElementTypes.Fire, new Vector3(17.0f, 0f, 25.0f)) },
+            { 2, ( ElementTypes.Air, new Vector3(-17.0f, 0f, 25.0f)) },
+            { 3, ( ElementTypes.Lightning, new Vector3(-25.0f, 0f, 0.0f)) },
+            { 4, ( ElementTypes.Nature, new Vector3(-18.0f, 0f, -25.0f)) },
+            { 5, ( ElementTypes.Water, new Vector3(17.0f, 0f, -25.0f)) },
+        };
+
         private int _eventPhase;
         //private int _textIndex = 0;
         private int _textId = 0;
@@ -63,6 +74,30 @@ namespace Leatha.WarOfTheElements.Server.Scripts.NonPlayers
 
             ++_eventPhase;
             AdvanceText();
+
+            if (waypointIndex >= _elementGameObjects.Count)
+                return;
+
+            // Spawn Element.
+            _ = SpawnElementCore(waypointIndex);
+        }
+
+        private async Task SpawnElementCore(int waypointIndex)
+        {
+            var pair = _elementGameObjects[waypointIndex + 1];
+
+            var state = await SpawnGameObjectAsync(waypointIndex + 1, pair.Position, Quaternion.Identity);
+
+            await Task.Delay(500);
+
+            // Not Ready will make the element cores perform spawn visual
+            await SetGameObjectState(
+                state!.WorldObjectId,
+                GameObjectStateType.NotReady,
+                new Dictionary<string, object>
+                {
+                    { "Element", pair.Element }
+                });
         }
 
         private bool HasNextText()

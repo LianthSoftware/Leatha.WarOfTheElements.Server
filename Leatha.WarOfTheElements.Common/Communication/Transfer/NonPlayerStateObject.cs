@@ -1,4 +1,6 @@
-﻿namespace Leatha.WarOfTheElements.Common.Communication.Transfer
+﻿using System.Numerics;
+
+namespace Leatha.WarOfTheElements.Common.Communication.Transfer
 {
     public sealed class NonPlayerStateObject : ICharacterStateObject
     {
@@ -14,37 +16,19 @@
 
         public Guid? InstanceId { get; set; }
 
+        public Vector3 Position { get; set; }
+
         public CharacterResourceObject Resources { get; set; } = new();
 
         public List<AuraObject> Auras { get; set; } = [];
 
-        // Position
-        public float X { get; set; }
+        public Quaternion Orientation { get; set; }
 
-        public float Y { get; set; }
+        public Vector3 Velocity { get; set; }
 
-        public float Z { get; set; }
-
-        // Orientation quaternion
-        public float Qx { get; set; }
-
-        public float Qy { get; set; }
-
-        public float Qz { get; set; }
-
-        public float Qw { get; set; }
-
-        // View angles (optional but nice to have directly)
         public float Yaw { get; set; }
 
         public float Pitch { get; set; }
-
-        // Velocity (for interpolation/extrapolation on client)
-        public float Vx { get; set; }
-
-        public float Vy { get; set; }
-
-        public float Vz { get; set; }
 
         // State flags
         public bool IsOnGround { get; set; }

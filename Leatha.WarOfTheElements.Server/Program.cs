@@ -83,10 +83,9 @@ namespace Leatha.WarOfTheElements.Server
                     };
                 });
 
-            builder.Services.AddSignalR(options =>
-            {
-                options.EnableDetailedErrors = true;
-            });
+            builder.Services
+                .AddSignalR(options => options.EnableDetailedErrors = true)
+                .AddJsonProtocol(options => options.PayloadSerializerOptions.IncludeFields = true);
 
             builder.Services.AddSingleton<IUserIdProvider, AuthUserIdProvider>();
 
@@ -146,6 +145,7 @@ namespace Leatha.WarOfTheElements.Server
                 services.AddSingleton<IScriptService, ScriptService>();
                 services.AddSingleton<IChatService, ChatService>();
                 services.AddSingleton<ISpellService, SpellService>();
+                services.AddSingleton<IGameObjectService, GameObjectService>();
                 services.AddSingleton<IColliderArchetypesLoader, ColliderArchetypesLoader>();
                 //services.AddSingleton<IScriptService, ScriptService>(sp =>
                 //{

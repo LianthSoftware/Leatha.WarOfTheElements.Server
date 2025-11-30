@@ -958,26 +958,58 @@ namespace Leatha.WarOfTheElements.Server.Services
                 {
                     GameObjectId = 1,
                     Name = "Fire Element Core",
+                    ColliderArchetypeId = 0, // #TODO
+                    SceneName = "res://scenes/controls/effects/initial_map_element_light_control.tscn"
                 },
                 new GameObjectTemplate
                 {
                     GameObjectId = 2,
                     Name = "Air Element Core",
+                    ColliderArchetypeId = 0, // #TODO
+                    SceneName = "res://scenes/controls/effects/initial_map_element_light_control.tscn"
                 },
                 new GameObjectTemplate
                 {
                     GameObjectId = 3,
                     Name = "Lightning Element Core",
+                    ColliderArchetypeId = 0, // #TODO
+                    SceneName = "res://scenes/controls/effects/initial_map_element_light_control.tscn"
                 },
                 new GameObjectTemplate
                 {
                     GameObjectId = 4,
                     Name = "Nature Element Core",
+                    ColliderArchetypeId = 0, // #TODO
+                    SceneName = "res://scenes/controls/effects/initial_map_element_light_control.tscn"
                 },
                 new GameObjectTemplate
                 {
                     GameObjectId = 5,
                     Name = "Water Element Core",
+                    ColliderArchetypeId = 0, // #TODO
+                    SceneName = "res://scenes/controls/effects/initial_map_element_light_control.tscn"
+                },
+
+                new GameObjectTemplate
+                {
+                    GameObjectId = 6,
+                    Name = "Primary Chakra Pillar",
+                    ColliderArchetypeId = 0, // #TODO
+                    SceneName = "res://scenes/controls/effects/initial_map_element_pillar.tscn"
+                },
+                new GameObjectTemplate
+                {
+                    GameObjectId = 7,
+                    Name = "Secondary Chakra Pillar",
+                    ColliderArchetypeId = 0, // #TODO
+                    SceneName = "res://scenes/controls/effects/initial_map_element_pillar.tscn"
+                },
+                new GameObjectTemplate
+                {
+                    GameObjectId = 8,
+                    Name = "Tertiary Chakra Pillar",
+                    ColliderArchetypeId = 0, // #TODO
+                    SceneName = "res://scenes/controls/effects/initial_map_element_pillar.tscn"
                 },
             };
 
@@ -996,43 +1028,68 @@ namespace Leatha.WarOfTheElements.Server.Services
             {
                 new GameObjectSpawnTemplate
                 {
-                    GameObjectId = 1,
+                    GameObjectId = 6,
                     MapId = 1,
-                    SpawnPosition = new Vector3(17.0f, 0f, 25.0f),
+                    SpawnPosition = new Vector3(0.0f, 2.5f, 5.5f),
                     Orientation = Quaternion.Identity,
                 },
                 new GameObjectSpawnTemplate
                 {
-                    GameObjectId = 2,
+                    GameObjectId = 7,
                     MapId = 1,
-                    SpawnPosition = new Vector3(-17.0f, 0f, 25.0f),
+                    SpawnPosition = new Vector3(0.0f, 2.5f, -5.5f),
                     Orientation = Quaternion.Identity,
                 },
                 new GameObjectSpawnTemplate
                 {
-                    GameObjectId = 3,
+                    GameObjectId = 8,
                     MapId = 1,
-                    SpawnPosition = new Vector3(-25.0f, 0f, 0.0f),
+                    SpawnPosition = new Vector3(-5.5f, 2.5f, 0.0f),
                     Orientation = Quaternion.Identity,
                 },
-                new GameObjectSpawnTemplate
-                {
-                    GameObjectId = 4,
-                    MapId = 1,
-                    SpawnPosition = new Vector3(-18.0f, 0f, -25.0f),
-                    Orientation = Quaternion.Identity,
-                },
-                new GameObjectSpawnTemplate
-                {
-                    GameObjectId = 5,
-                    MapId = 1,
-                    SpawnPosition = new Vector3(17.0f, 0f, -25.0f),
-                    Orientation = Quaternion.Identity,
-                },
+
+                //new GameObjectSpawnTemplate
+                //{
+                //    GameObjectId = 1,
+                //    MapId = 1,
+                //    SpawnPosition = new Vector3(17.0f, 0f, 25.0f),
+                //    Orientation = Quaternion.Identity,
+                //},
+                //new GameObjectSpawnTemplate
+                //{
+                //    GameObjectId = 2,
+                //    MapId = 1,
+                //    SpawnPosition = new Vector3(-17.0f, 0f, 25.0f),
+                //    Orientation = Quaternion.Identity,
+                //},
+                //new GameObjectSpawnTemplate
+                //{
+                //    GameObjectId = 3,
+                //    MapId = 1,
+                //    SpawnPosition = new Vector3(-25.0f, 0f, 0.0f),
+                //    Orientation = Quaternion.Identity,
+                //},
+                //new GameObjectSpawnTemplate
+                //{
+                //    GameObjectId = 4,
+                //    MapId = 1,
+                //    SpawnPosition = new Vector3(-18.0f, 0f, -25.0f),
+                //    Orientation = Quaternion.Identity,
+                //},
+                //new GameObjectSpawnTemplate
+                //{
+                //    GameObjectId = 5,
+                //    MapId = 1,
+                //    SpawnPosition = new Vector3(17.0f, 0f, -25.0f),
+                //    Orientation = Quaternion.Identity,
+                //},
             };
 
             await _mongoGameDatabase.GetMongoCollection<GameObjectSpawnTemplate>()
                 .DeleteManyAsync(Builders<GameObjectSpawnTemplate>.Filter.Empty);
+
+            if (!templates.Any())
+                return templates;
 
             await _mongoGameDatabase.GetMongoCollection<GameObjectSpawnTemplate>()
                 .InsertManyAsync(templates);

@@ -50,5 +50,14 @@ namespace Leatha.WarOfTheElements.Server.Controllers
             var items = response.Select(i => i.AsTransferObject()).ToList();
             return Ok(items);
         }
+
+        [HttpGet("templates/game_object_template")]
+        [ProducesResponseType(typeof(List<GameObjectInfoObject>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetGameObjectTemplatesAsync()
+        {
+            var response = await _templateService.GetGameObjectTemplatesAsync();
+            var items = response.Select(i => i.AsTransferObject()).ToList();
+            return Ok(items);
+        }
     }
 }

@@ -57,7 +57,7 @@ namespace Leatha.WarOfTheElements.Server.Controllers
         [HttpPost("refresh-token")]
         [ProducesResponseType(typeof(RefreshTokenResponse), StatusCodes.Status200OK)]
         //[ProducesResponseType(typeof(NotFoundResult), StatusCodes.Status404NotFound)]
-        [ProducesResponseType(typeof(NotFoundResult), StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(typeof(void), StatusCodes.Status401Unauthorized)]
         public async Task<IActionResult> RefreshTokenAsync([FromBody] RefreshTokenRequest request)
         {
             var response = await _authService.RefreshTokenAsync(request.AccountId, request.RefreshToken);

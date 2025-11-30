@@ -57,6 +57,7 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
         Task RemovePlayerFromWorldAsync(PlayerState? state);
 
         List<ICharacterState> GetCharacters();
+
         List<ICharacterState> GetCharacters(Vector3 position, float distance);
 
 
@@ -69,6 +70,15 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
         Task AddNonPlayerToWorldAsync(NonPlayerState? state, NonPlayerSpawnTemplate spawnTemplate);
 
         void RemovePlayerFromWorld(NonPlayerState? state);
+
+        Task AddGameObjectToWorldAsync(GameObjectState? state, GameObjectSpawnTemplate spawnTemplate);
+
+        Task<GameObjectState?> AddGameObjectToWorldAsync(
+            int gameObjectId,
+            int mapId,
+            Guid? instanceId,
+            Vector3 position,
+            Quaternion orientation);
 
 
         void ProcessPlayerInputs(List<PlayerInputObject> inputs, double fixedDelta);
@@ -84,6 +94,11 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
         void SynchronizeCharactersFromPhysics(double fixedDelta);
 
         Task SendSnapshotAsync(double fixedDt, long tick, CancellationToken stoppingToken);
+
+        Task SetGameObjectStateAsync(
+            WorldObjectId gameObjectId,
+            GameObjectStateType stateType,
+            Dictionary<string, object>? stateParameters = null);
     }
 
     public sealed class GameWorld : IGameWorld
@@ -95,6 +110,7 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
             IPlayerService playerService,
             IScriptService scriptService,
             IChatService chatService,
+            IGameObjectService gameObjectService,
             ITemplateService templateService,
             IServerToClientHandler serverClientHandler)
         {
@@ -104,6 +120,7 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
             _playerService = playerService;
             _scriptService = scriptService;
             _chatService = chatService;
+            _gameObjectService = gameObjectService;
             _templateService = templateService;
             _serverClientHandler = serverClientHandler;
         }
@@ -126,6 +143,7 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
         private readonly IPlayerService _playerService;
         private readonly IScriptService _scriptService;
         private readonly IChatService _chatService;
+        private readonly IGameObjectService _gameObjectService;
         private readonly ITemplateService _templateService;
         private readonly IServerToClientHandler _serverClientHandler;
 
@@ -208,6 +226,11 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
             return null;
         }
 
+        public GameObjectState? GetGameObjectState(WorldObjectId gameObjectId)
+        {
+            return GameObjects.GetValueOrDefault(gameObjectId.ObjectId);
+        }
+
         public async Task AddPlayerToWorldAsync(PlayerState? playerState)
         {
             if (playerState == null)
@@ -228,6 +251,16 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
 
             // Add it to SignalR group.
             await _gameHubService.AddToMapGroup(playerState.AccountId, playerState.MapId, playerState.InstanceId);
+
+            await _serverClientHandler.PlayerEnteredMap(playerState.AsTransferObject());
+            //_ = DelayedPlayerEnteredMap(playerState);
+        }
+
+        private async Task DelayedPlayerEnteredMap(PlayerState playerState)
+        {
+            await Task.Delay(500);
+
+            await _serverClientHandler.PlayerEnteredMap(playerState.AsTransferObject());
         }
 
         private async Task LoadMapAsync(int mapId)
@@ -409,6 +442,47 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
 
             // Register in the in-memory game world so GameLoop sees it
             GameObjects[state.GameObjectId] = state;
+        }
+
+        public async Task<GameObjectState?> AddGameObjectToWorldAsync(
+            int gameObjectId,
+            int mapId,
+            Guid? instanceId,
+            Vector3 position,
+            Quaternion orientation)
+        {
+            var template = await _templateService.GetGameObjectTemplateAsync(gameObjectId);
+            if (template == null)
+            {
+                Debug.WriteLine($"[AddGameObjectToWorldAsync]: GameObject template with Id = \"{ gameObjectId }\" does not exist.");
+                return null;
+            }
+
+            var state = new GameObjectState(Guid.NewGuid(), position, orientation)
+            {
+                GameObjectName = template.Name,
+                TemplateId = template.GameObjectId,
+                MapId = mapId,
+                
+            };
+
+            // Add body to physics
+            var staticBody = _physicsWorld.AddStaticObject(state.GameObjectId, state.Position, state.Orientation);
+            state.SetPhysicsBody(staticBody, state.Position, state.Orientation);
+
+            //var script = await _scriptService.CreateScriptAsync(state);
+            //if (script != null)
+            //{
+            //    script.SetGameWorld(this);
+            //    state.SetScript(script);
+            //}
+
+            // Register in the in-memory game world so GameLoop sees it
+            GameObjects[state.GameObjectId] = state;
+
+            Debug.WriteLine($"Added GameObject \"{ state.GameObjectName }\" (Id = \"{ state.GameObjectId }\") to the world.");
+
+            return state;
         }
 
         public void RemovePlayerFromWorld(NonPlayerState? state)
@@ -675,13 +749,20 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
 
             var groups = Players
                 .Values
-                .GroupBy(p => (p.MapId, p.InstanceId));
+                .GroupBy(p => (p.MapId, p.InstanceId))
+                .ToDictionary(i => i.Key, n => n.ToList());
 
             foreach (var group in groups)
             {
                 var (mapId, instanceId) = group.Key;
 
-                // #TODO: Maybe group this before?
+                // Players.
+                var players = group
+                    .Value
+                    .Select(p => p.AsTransferObject())
+                    .ToList();
+
+                // Non Players.
                 var nonPlayers = NonPlayers
                     .Where(i =>
                         i.Value.MapId == mapId &&
@@ -689,20 +770,45 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
                     .Select(i => i.Value.AsTransferObject())
                     .ToList();
 
+                // GameObjects.
+                var gameObjects = GameObjects
+                    .Where(i =>
+                        i.Value.MapId == mapId &&
+                        (!instanceId.HasValue || i.Value.InstanceId == instanceId))
+                    .Select(i => i.Value.AsTransferObject())
+                    .ToList();
+
+                // Full snapshot message.
                 var snapshot = new WorldSnapshotMessage
                 {
                     Tick = tick,
                     ServerTime = now,
                     MapId = mapId,
                     InstanceId = instanceId,
-                    Players = group
-                        .Select(p => p.AsTransferObject())
-                        .ToList(),
-                    NonPlayers = nonPlayers
+                    Players = players,
+                    NonPlayers = nonPlayers,
+                    GameObjects = gameObjects
                 };
 
                 await _serverClientHandler.SendSnapshot(snapshot, stoppingToken);
             }
+        }
+
+        public async Task SetGameObjectStateAsync(
+            WorldObjectId gameObjectId,
+            GameObjectStateType stateType,
+            Dictionary<string, object>? stateParameters = null)
+        {
+            stateParameters ??= [];
+
+            var gameObject = GetGameObjectState(gameObjectId);
+            if (gameObject == null)
+                return;
+
+            await _gameObjectService.SetGameObjectStateAsync(
+                gameObject.AsTransferObject(),
+                stateType,
+                stateParameters);
         }
 
         public List<ICharacterState> GetCharacters()

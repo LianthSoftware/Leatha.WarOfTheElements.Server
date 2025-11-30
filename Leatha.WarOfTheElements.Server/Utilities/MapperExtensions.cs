@@ -6,6 +6,7 @@ using Leatha.WarOfTheElements.Server.DataAccess.Entities;
 using Leatha.WarOfTheElements.Server.DataAccess.Entities.Templates;
 using Leatha.WarOfTheElements.Server.Demo;
 using Leatha.WarOfTheElements.Server.Objects.Characters;
+using Leatha.WarOfTheElements.Server.Objects.GameObjects;
 
 namespace Leatha.WarOfTheElements.Server.Utilities
 {
@@ -49,25 +50,13 @@ namespace Leatha.WarOfTheElements.Server.Utilities
                 CharacterName = entity.CharacterName,
                 CharacterLevel = entity.CharacterLevel,
 
-                // Position
-                X = entity.Position.X,
-                Y = entity.Position.Y,
-                Z = entity.Position.Z,
-
-                // Orientation quaternion
-                Qx = entity.Orientation.X,
-                Qy = entity.Orientation.Y,
-                Qz = entity.Orientation.Z,
-                Qw = entity.Orientation.W,
+                Position = entity.Position,
+                Orientation = entity.Orientation,
+                Velocity = entity.Velocity,
 
                 // View angles
                 Yaw = entity.Yaw,
                 Pitch = entity.Pitch,
-
-                // Velocity
-                Vx = entity.Velocity.X,
-                Vy = entity.Velocity.Y,
-                Vz = entity.Velocity.Z,
 
                 // State flags
                 IsOnGround = entity.IsOnGround,
@@ -92,30 +81,35 @@ namespace Leatha.WarOfTheElements.Server.Utilities
                 CharacterName = entity.CharacterName,
                 CharacterLevel = entity.CharacterLevel,
 
-                // Position
-                X = entity.Position.X,
-                Y = entity.Position.Y,
-                Z = entity.Position.Z,
-
-                // Orientation quaternion
-                Qx = entity.Orientation.X,
-                Qy = entity.Orientation.Y,
-                Qz = entity.Orientation.Z,
-                Qw = entity.Orientation.W,
+                Position = entity.Position,
+                Orientation = entity.Orientation,
+                Velocity = entity.Velocity,
 
                 // View angles
                 Yaw = entity.Yaw,
                 Pitch = entity.Pitch,
 
-                // Velocity
-                Vx = entity.Velocity.X,
-                Vy = entity.Velocity.Y,
-                Vz = entity.Velocity.Z,
-
                 // State flags
                 IsOnGround = entity.IsOnGround,
                 IsFlying = entity.IsFlying,
                 IsSprinting = entity.IsSprinting,
+            };
+        }
+
+        public static GameObjectStateObject AsTransferObject(this GameObjectState entity)
+        {
+            return new GameObjectStateObject
+            {
+                WorldObjectId = new WorldObjectId(entity.GameObjectId, WorldObjectType.GameObject),
+                TemplateId = entity.TemplateId,
+                MapId = entity.MapId,
+                InstanceId = entity.InstanceId,
+
+                Auras = entity.Auras,
+
+                Position = entity.Position,
+                Orientation = entity.Orientation,
+                
             };
         }
 
@@ -179,6 +173,16 @@ namespace Leatha.WarOfTheElements.Server.Utilities
                 MapSizeX = entity.MapSizeX,
                 MapSizeY = entity.MapSizeY,
                 MapFlags = entity.MapFlags
+            };
+        }
+
+        public static GameObjectInfoObject AsTransferObject(this GameObjectTemplate entity)
+        {
+            return new GameObjectInfoObject
+            {
+                GameObjectId = entity.GameObjectId,
+                Name = entity.Name,
+                SceneName = entity.SceneName
             };
         }
 

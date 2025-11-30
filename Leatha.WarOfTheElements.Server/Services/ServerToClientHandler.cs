@@ -1,9 +1,10 @@
 ﻿using Leatha.WarOfTheElements.Common.Communication.Messages;
 using Leatha.WarOfTheElements.Common.Communication.Services;
 using Leatha.WarOfTheElements.Common.Communication.Transfer;
-using Leatha.WarOfTheElements.Server.Objects.Game;
-using System.Threading;
 using Leatha.WarOfTheElements.Server.Objects.Characters;
+using Leatha.WarOfTheElements.Server.Objects.Game;
+using Leatha.WarOfTheElements.Server.Objects.GameObjects;
+using System.Threading;
 
 namespace Leatha.WarOfTheElements.Server.Services
 {
@@ -72,6 +73,24 @@ namespace Leatha.WarOfTheElements.Server.Services
                     chatMessage,
                     cancellationToken);
             });
+        }
+
+        public Task SetGameObjectState(SetGameStateMessage message, int mapId, Guid? instanceId)
+        {
+            var groupName = MapGroupName.For(mapId, instanceId);
+            return _gameHubService.SendMessageToGroup(
+                groupName,
+                nameof(IServerToClientHandler.SetGameObjectState),
+                message);
+        }
+
+        public Task PlayerEnteredMap(PlayerStateObject playerState)
+        {
+            var groupName = MapGroupName.For(playerState.MapId, playerState.InstanceId);
+            return _gameHubService.SendMessageToGroup(
+                groupName,
+                nameof(IServerToClientHandler.PlayerEnteredMap),
+                playerState);
         }
     }
 }
