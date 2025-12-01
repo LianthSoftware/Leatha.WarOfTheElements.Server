@@ -41,6 +41,8 @@ namespace Leatha.WarOfTheElements.Server.DataAccess.Entities.Templates
 
         public string SpellIconPath { get; set; } = null!;
 
+        public string? VisualSpellPath { get; set; }
+
         public string? ScriptName { get; set; }
     }
 }

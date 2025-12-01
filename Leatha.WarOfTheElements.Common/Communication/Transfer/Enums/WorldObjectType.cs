@@ -12,5 +12,6 @@ namespace Leatha.WarOfTheElements.Common.Communication.Transfer.Enums
         Player                          = 1,
         NonPlayer                       = 2,
         GameObject                      = 3,
+        Projectile                      = 4,
     }
 }

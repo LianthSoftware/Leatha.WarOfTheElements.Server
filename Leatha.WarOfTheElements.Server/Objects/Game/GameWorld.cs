@@ -3,21 +3,22 @@ using Leatha.WarOfTheElements.Common.Communication.Services;
 using Leatha.WarOfTheElements.Common.Communication.Transfer;
 using Leatha.WarOfTheElements.Common.Communication.Transfer.Enums;
 using Leatha.WarOfTheElements.Common.Communication.Utilities;
+using Leatha.WarOfTheElements.Common.Environment.Collisions;
 using Leatha.WarOfTheElements.Server.DataAccess.Entities;
 using Leatha.WarOfTheElements.Server.DataAccess.Entities.Templates;
 using Leatha.WarOfTheElements.Server.Objects.Characters;
+using Leatha.WarOfTheElements.Server.Objects.GameObjects;
+using Leatha.WarOfTheElements.Server.Objects.Spells;
 using Leatha.WarOfTheElements.Server.Scripts.Auras;
 using Leatha.WarOfTheElements.Server.Scripts.Spells;
 using Leatha.WarOfTheElements.Server.Services;
 using Leatha.WarOfTheElements.Server.Utilities;
 using Leatha.WarOfTheElements.World.Physics;
+using MongoDB.Driver;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Numerics;
 using System.Text.RegularExpressions;
-using Leatha.WarOfTheElements.Common.Environment.Collisions;
-using Leatha.WarOfTheElements.Server.Objects.GameObjects;
-using MongoDB.Driver;
 
 namespace Leatha.WarOfTheElements.Server.Objects.Game
 {
@@ -34,7 +35,7 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
         ConcurrentDictionary<Guid, Aura> Auras { get; }
 
 
-        void RegisterSpell(SpellObject spellObject, SpellScriptBase? spellScript);
+        Spell RegisterSpell(SpellObject spellObject, SpellScriptBase? spellScript);
 
         void RegisterAura(AuraObject spellObject, AuraScriptBase? spellScript);
 
@@ -80,6 +81,15 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
             Vector3 position,
             Quaternion orientation);
 
+        public ProjectileState AddProjectile(
+            SpellObject spell,
+            Vector3 origin,
+            Vector3 direction,
+            float speed,
+            float radius,
+            float lifetimeMs,
+            bool launchedImmediately);
+
 
         void ProcessPlayerInputs(List<PlayerInputObject> inputs, double fixedDelta);
 
@@ -90,6 +100,10 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
         void ProcessSpells(double fixedDelta);
 
         void ProcessAuras(double fixedDelta);
+
+        void ProcessProjectiles(double fixedDelta);
+
+        void HandleProjectileHits();
 
         void SynchronizeCharactersFromPhysics(double fixedDelta);
 
@@ -135,6 +149,9 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
 
         public ConcurrentDictionary<Guid, Aura> Auras { get; } = new();
 
+        public ConcurrentDictionary<Guid, ProjectileState> Projectiles { get; } = new();
+
+
         private readonly Dictionary<int, LoadedMapInfo> _loadedMaps = [];
 
         private readonly IMongoDatabase _mongoGameDatabase;
@@ -147,14 +164,18 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
         private readonly ITemplateService _templateService;
         private readonly IServerToClientHandler _serverClientHandler;
 
-        public void RegisterSpell(SpellObject spellObject, SpellScriptBase? spellScript)
+        public Spell RegisterSpell(SpellObject spellObject, SpellScriptBase? spellScript)
         {
-            Spells[spellObject.SpellGuid] = new Spell
+            var spell = new Spell
             {
                 SpellGuid = spellObject.SpellGuid,
                 SpellObject = spellObject,
                 Script = spellScript
             };
+
+            Spells[spellObject.SpellGuid] = spell;
+
+            return spell;
         }
 
         public void RegisterAura(AuraObject auraObject, AuraScriptBase? spellScript)
@@ -494,6 +515,87 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
             _physicsWorld.RemoveNonPlayer(state.NonPlayerId);
         }
 
+        //public ProjectileState AddProjectile(
+        //    SpellObject spell,
+        //    Vector3 origin,
+        //    Vector3 direction,
+        //    float speed,
+        //    float radius,
+        //    float lifetimeMs)
+        //{
+        //    var id = Guid.NewGuid();
+
+        //    var projState = new ProjectileState(id, origin, Quaternion.Identity)
+        //    {
+        //        MapId = spell.Caster.MapId,
+        //        InstanceId = spell.Caster.InstanceId,
+        //        CasterId = spell.Caster.WorldObjectId,
+        //        Velocity = direction * speed,
+        //        RemainingLifetimeMs = lifetimeMs
+        //    };
+
+        //    // Velocity = Vector.Zero => It will be moved after its cast end.
+        //    var body = _physicsWorld.AddProjectile(id, origin, Vector3.Zero, radius);
+        //    projState.SetPhysicsBody(body);
+
+        //    Projectiles[id] = projState;
+
+        //    // Tell clients to spawn VFX
+        //    //_serverClientHandler.SpawnProjectile(projState.AsTransferObject());
+
+        //    return projState;
+        //}
+
+        public ProjectileState AddProjectile(
+            SpellObject spell,
+            Vector3 origin,
+            Vector3 direction,
+            float speed,
+            float radius,
+            float lifetimeMs,
+            bool launchedImmediately)
+        {
+            var id = Guid.NewGuid();
+
+            var projState = new ProjectileState(id, origin, Quaternion.Identity)
+            {
+                MapId = spell.Caster.MapId,
+                SpellGuid = spell.SpellGuid,
+                InstanceId = spell.Caster.InstanceId,
+                CasterId = spell.Caster.WorldObjectId,
+                RemainingLifetimeMs = lifetimeMs,
+                Launched = launchedImmediately
+            };
+
+            var initialVelocity = launchedImmediately ? direction * speed : Vector3.Zero;
+
+            var body = _physicsWorld.AddProjectile(id, origin, initialVelocity, radius);
+            projState.SetPhysicsBody(body);
+            projState.Velocity = initialVelocity;
+
+            Projectiles[id] = projState;
+
+            // send to client: spawn visual, but mark it as not moving yet for cast-time spells
+            //_serverClientHandler.SpawnProjectile(projState.AsTransferObject());
+
+            return projState;
+        }
+
+        //private Vector3 GetProjectileDirection(ICharacterStateObject caster)
+        //{
+        //    // Forward direction from caster yaw
+        //    var yaw = caster.Yaw;
+        //    var dir = new Vector3(
+        //        MathF.Sin(yaw),
+        //        0f,
+        //        MathF.Cos(yaw)); // assuming +Z forward
+
+        //    dir = Vector3.Normalize(dir);
+
+        //    return dir;
+        //}
+
+
         public void ProcessPlayerInputs(List<PlayerInputObject> inputs, double fixedDelta)
         {
             foreach (var input in inputs)
@@ -509,11 +611,11 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
                 // Y is controlled by our kinematic controller (jump + gravity).
                 var desiredVelocity = playerState.ComputeDesiredVelocity(input, fixedDelta);
 
-                // 🔍 DEBUG: show input + desired
-                Debug.WriteLine(
-                    $"[INPUT] player={playerState.CharacterName} seq={input.Sequence} " +
-                    $"F={input.Forward:0.00} R={input.Right:0.00} " +
-                    $"Yaw={input.Yaw:0.00} -> desired=<{desiredVelocity.X:0.00},{desiredVelocity.Y:0.00},{desiredVelocity.Z:0.00}>");
+                //// 🔍 DEBUG: show input + desired
+                //Debug.WriteLine(
+                //    $"[INPUT] player={playerState.CharacterName} seq={input.Sequence} " +
+                //    $"F={input.Forward:0.00} R={input.Right:0.00} " +
+                //    $"Yaw={input.Yaw:0.00} -> desired=<{desiredVelocity.X:0.00},{desiredVelocity.Y:0.00},{desiredVelocity.Z:0.00}>");
 
 
 
@@ -548,8 +650,8 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
                 playerState.IsOnGround = isOnGround;
                 playerState.Velocity = newVelocity;
 
-                Debug.WriteLine(
-                    $"[INPUT] after MovePlayerDynamic vel=<{newVelocity.X:0.00},{newVelocity.Y:0.00},{newVelocity.Z:0.00}> IsOnGround={isOnGround}");
+                //Debug.WriteLine(
+                //    $"[INPUT] after MovePlayerDynamic vel=<{newVelocity.X:0.00},{newVelocity.Y:0.00},{newVelocity.Z:0.00}> IsOnGround={isOnGround}");
 
                 //if (newVelocity.Y > 0)
                 //    Debug.WriteLine("Velocity Y > 0 (jump applied)");
@@ -660,17 +762,171 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
             {
                 var spell = kvp.Value;
                 spell.SpellObject.RemainingCastTime -= (float)fixedDelta * 1000;
-                if (spell.SpellObject is { RemainingCastTime: <= 0.0f, IsCastFinished: false })
+                if (spell is { IsReady: true, SpellObject.RemainingCastTime: <= 0.0f })
                 {
-                    spell.SpellObject.IsCastFinished = true;
+                    // launch cast-time projectile now
+                    if (spell.SpellObject.SpellInfo.SpellFlags.HasFlag(SpellFlags.IsProjectile) &&
+                        spell.ProjectileState is { Launched: false } projectile)
+                    {
+                        LaunchProjectile(spell, projectile);
+                        spell.SpellObject.ProjectileState = projectile.AsTransferObject();
+                    }
 
-                    _serverClientHandler.SendSpellFinished(
-                        spell.SpellObject,
-                        spell.SpellObject.Caster);
+                    if (!spell.SpellObject.IsCastFinished)
+                    {
+                        spell.SpellObject.IsCastFinished = true;
+
+                        _serverClientHandler.SendSpellFinished(
+                            spell.SpellObject,
+                            spell.SpellObject.Caster);
+                    }
+
+                    //// Fire projectile.
+                    //if (spell.SpellObject.SpellInfo.SpellFlags.HasFlag(SpellFlags.IsProjectile) &&
+                    //    spell.ProjectileState is { } projectile)
+                    //{
+                    //    var direction = GetProjectileDirection(spell.SpellObject.Caster);
+                    //    var velocity = direction * 0.50f; // #TODO: Variable speed.
+
+                    //    var position = _physicsWorld.MoveProjectileKinematic(
+                    //        projectile.ProjectileId,
+                    //        velocity,
+                    //        (float) fixedDelta);
+
+                    //    Debug.WriteLine($"Projectile: Position = { position } | Velocity = { projectile.Velocity } | Velocity NEW = { velocity }");
+
+                    //    projectile.Velocity = velocity;
+                    //    projectile.Position = position;
+
+                    //    spell.SpellObject.ProjectileState = projectile.AsTransferObject();
+                    //}
+
+                    //if (!spell.SpellObject.IsCastFinished)
+                    //{
+                    //    spell.SpellObject.IsCastFinished = true;
+
+                    //    _serverClientHandler.SendSpellFinished(
+                    //        spell.SpellObject,
+                    //        spell.SpellObject.Caster);
+                    //}
                 }
 
                 spell.Script?.OnUpdate(fixedDelta);
             }
+        }
+
+        public void ProcessProjectiles(double fixedDelta)
+        {
+            foreach (var kvp in Projectiles.ToArray())
+            {
+                var proj = kvp.Value;
+
+                // Lifetime
+                proj.RemainingLifetimeMs -= (float)fixedDelta * 1000f;
+                if (proj.RemainingLifetimeMs <= 0f)
+                {
+                    DestroyProjectile(proj);
+                    continue;
+                }
+
+                // Keep it no-gravity (dynamic but plane-only)
+                _physicsWorld.KeepProjectileNoGravity(proj.ProjectileId);
+
+                // Sync transform from physics
+                if (_physicsWorld.TryGetProjectileTransform(proj.Body, out var pos, out var orient))
+                {
+                    proj.Position = pos;
+                    proj.Orientation = orient;
+                }
+
+                if (Spells.TryGetValue(proj.SpellGuid, out var spell))
+                {
+                    spell.SpellObject.ProjectileState = proj.AsTransferObject();
+                    //Debug.WriteLine($"Projectile = {spell.SpellObject.ProjectileState.Position} | Velocity = { spell.SpellObject.ProjectileState.Velocity }");
+                }
+
+                // Collision hits will be processed in a separate queue – see below
+            }
+        }
+
+        public void HandleProjectileHits()
+        {
+            while (_physicsWorld.GetCurrentProjectileHits().TryDequeue(out var hit))
+            {
+                var (projId, other) = hit;
+
+                if (!Projectiles.TryGetValue(projId, out var proj))
+                    continue;
+
+                // identify other: player, non-player, static...
+                if (_physicsWorld.TryMapCollidableToWorldObject(other, out var targetId))
+                {
+                    //ApplyDamageAndDestroy(proj, targetId.Value);
+
+                    // Projectiles do not hit own caster. #TODO: Is it correct?
+                    if (proj.CasterId != targetId)
+                    {
+                        Debug.WriteLine($"*** HIT *** -> {targetId}");
+                        DestroyProjectile(proj);
+                    }
+                }
+                else
+                {
+                    // hit wall / terrain -> just destroy projectile
+                    DestroyProjectile(proj);
+                }
+            }
+        }
+
+        private void DestroyProjectile(ProjectileState proj)
+        {
+            if (Projectiles.TryRemove(proj.ProjectileId, out _))
+            {
+                _physicsWorld.RemoveProjectile(proj.ProjectileId);
+
+                //_serverClientHandler.DestroyProjectile(proj.ProjectileId);
+
+                if (Spells.TryGetValue(proj.SpellGuid, out var spell))
+                {
+                    _serverClientHandler.SendProjectileHit(spell.SpellObject, spell.SpellObject.Caster);
+
+                    // #TODO: Multiple projectiles per spell?
+                    if (Spells.Remove(spell.SpellGuid, out _))
+                        Debug.WriteLine($"Spell { spell.SpellObject.SpellInfo.SpellName } destroyed.");
+                }
+            }
+        }
+
+        private void LaunchProjectile(Spell spell, ProjectileState projectile)
+        {
+            var caster = spell.SpellObject.Caster;
+
+            var dir = GetProjectileDirection(caster);
+            var speed = 10f; // or from SpellInfo.ProjectileSpeed
+
+            var velocity = dir * speed;
+
+            projectile.Velocity = velocity;
+            projectile.Launched = true;
+
+            _physicsWorld.SetProjectileVelocity(projectile.ProjectileId, velocity);
+
+            // Optionally notify clients that it started moving
+            //_serverClientHandler.ProjectileLaunched(projectile.AsTransferObject());
+        }
+
+        private static Vector3 GetProjectileDirection(ICharacterStateObject caster)
+        {
+            // Forward direction from caster yaw
+            var yaw = caster.Yaw;
+            var dir = new Vector3(
+                -MathF.Sin(yaw),
+                0f,
+                -MathF.Cos(yaw)); // assuming +Z forward
+
+            dir = Vector3.Normalize(dir);
+
+            return dir;
         }
 
         public void ProcessAuras(double fixedDelta) // #TODO: Should not be task?
@@ -727,11 +983,6 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
                 // do NOT overwrite it with Bepu's internal velocity here.
                 playerState.IsOnGround = grounded;
 
-                if (playerState.WorldObjectId.IsPlayer())
-                    Debug.WriteLine(
-                        $"[SYNC] {playerState.CharacterName} pos=<{position.X:0.00},{position.Y:0.00},{position.Z:0.00}> " +
-                        $"grounded={grounded}");
-
                 playerState.Orientation =
                     Quaternion.CreateFromAxisAngle(Vector3.UnitY, playerState.Yaw);
 
@@ -778,6 +1029,14 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
                     .Select(i => i.Value.AsTransferObject())
                     .ToList();
 
+                // Spells.
+                var spells = Spells
+                    .Where(i =>
+                        i.Value.SpellObject.Caster.MapId == mapId &&
+                        (!instanceId.HasValue || i.Value.SpellObject.Caster.InstanceId == instanceId))
+                    .Select(i => i.Value.SpellObject)
+                    .ToList();
+
                 // Full snapshot message.
                 var snapshot = new WorldSnapshotMessage
                 {
@@ -787,7 +1046,8 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
                     InstanceId = instanceId,
                     Players = players,
                     NonPlayers = nonPlayers,
-                    GameObjects = gameObjects
+                    GameObjects = gameObjects,
+                    Spells = spells
                 };
 
                 await _serverClientHandler.SendSnapshot(snapshot, stoppingToken);
@@ -863,6 +1123,10 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
         public SpellObject SpellObject { get; set; } = null!;
 
         public SpellScriptBase? Script { get; set; }
+
+        public ProjectileState? ProjectileState { get; set; }
+
+        public bool IsReady { get; set; }
     }
 
     public sealed class Aura

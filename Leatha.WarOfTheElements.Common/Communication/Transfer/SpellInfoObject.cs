@@ -65,9 +65,12 @@ namespace Leatha.WarOfTheElements.Common.Communication.Transfer
 
 
 
-        // #TODO: Move it elsewhere!
         [Required]
         [JsonPropertyName("spellIconPath")]
         public string SpellIconPath { get; set; } = null!;
+
+        [Required]
+        [JsonPropertyName("visualSpellPath")]
+        public string? VisualSpellPath { get; set; }
     }
 }

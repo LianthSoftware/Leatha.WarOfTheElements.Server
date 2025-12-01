@@ -13,6 +13,8 @@ namespace Leatha.WarOfTheElements.Common.Communication.Services
 
         Task SendSpellFinished(SpellObject spellObject, ICharacterStateObject caster);
 
+        Task SendProjectileHit(SpellObject spellObject, ICharacterStateObject caster);
+
         Task SendAuraApply(AuraObject auraObject, ICharacterStateObject target);
 
         Task SendAuraRemove(AuraObject auraObject, ICharacterStateObject target);

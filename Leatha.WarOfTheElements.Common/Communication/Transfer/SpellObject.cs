@@ -27,6 +27,6 @@ namespace Leatha.WarOfTheElements.Common.Communication.Transfer
         public bool IsCastFinished { get; set; }
 
 
-        public string? VisualSpellPath { get; set; }
+        public ProjectileStateObject? ProjectileState { get; set; }
     }
 }

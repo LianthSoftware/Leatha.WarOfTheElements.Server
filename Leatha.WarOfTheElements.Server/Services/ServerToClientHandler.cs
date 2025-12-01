@@ -45,6 +45,15 @@ namespace Leatha.WarOfTheElements.Server.Services
                 spellObject);
         }
 
+        public Task SendProjectileHit(SpellObject spellObject, ICharacterStateObject caster)
+        {
+            var groupName = MapGroupName.For(caster.MapId, caster.InstanceId);
+            return _gameHubService.SendMessageToGroup(
+                groupName,
+                nameof(IServerToClientHandler.SendProjectileHit),
+                spellObject);
+        }
+
         public Task SendAuraApply(AuraObject auraObject, ICharacterStateObject target)
         {
             var groupName = MapGroupName.For(target.MapId, target.InstanceId);

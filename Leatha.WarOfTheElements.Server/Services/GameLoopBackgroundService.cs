@@ -21,15 +21,11 @@ namespace Leatha.WarOfTheElements.Server.Services
         public GameLoopBackgroundService(
             IInputQueueService inputQueue,
             PhysicsWorld physicsWorld,
-            IGameWorld gameWorld,
-            IServerToClientHandler serverClientHandler,
-            ITemplateService templateService)
+            IGameWorld gameWorld)
         {
             _inputQueue = inputQueue;
             _physicsWorld = physicsWorld;
             _gameWorld = gameWorld;
-            _serverClientHandler = serverClientHandler;
-            _templateService = templateService;
         }
 
         private const double TickRate = 60.0;
@@ -38,58 +34,12 @@ namespace Leatha.WarOfTheElements.Server.Services
         private readonly IInputQueueService _inputQueue;
         private readonly PhysicsWorld _physicsWorld;
         private readonly IGameWorld _gameWorld;
-        private readonly IServerToClientHandler _serverClientHandler;
-        private readonly ITemplateService _templateService;
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             var stopwatch = Stopwatch.StartNew();
             var accumulator = 0.0;
             long tick = 0;
-
-            // Initial load. #TODO: Move this elsewhere.
-            //var nonPlayerSpawnTemplates = await _templateService.GetNonPlayerSpawnTemplatesAsync();
-            //var templates = nonPlayerSpawnTemplates
-            //    .GroupBy(i => i.NonPlayerId)
-            //    .ToDictionary(i => i.Key, n => n.ToList());
-            //foreach (var template in templates)
-            //{
-            //    var nonPlayerTemplate = await _templateService.GetNonPlayerTemplateAsync(template.Key);
-            //    if (nonPlayerTemplate == null)
-            //    {
-            //        Debug.WriteLine($"NonPlayer template with Id = \"{ template.Key }\" does not exist.");
-            //        continue;
-            //    }
-
-            //    foreach (var nonPlayerSpawnTemplate in template.Value)
-            //    {
-            //        var state = new NonPlayerState(Guid.NewGuid(), nonPlayerSpawnTemplate.SpawnPosition, nonPlayerSpawnTemplate.Orientation)
-            //        {
-            //            CharacterName = nonPlayerTemplate.Name,
-            //            CharacterLevel = nonPlayerTemplate.Level,
-            //            TemplateId = template.Key,
-            //            MapId = nonPlayerSpawnTemplate.MapId,
-            //            //InstanceId = nonPlayerSpawnTemplate.InstanceId,
-            //            Velocity = Vector3.Zero,
-            //            Resources = new CharacterResourceObject // #TODO: From some other table or non player template?
-            //            {
-            //                Health = 333,
-            //                MaxHealth = 450,
-            //                PrimaryChakra = new ChakraResource
-            //                {
-            //                    Element = ElementTypes.Nature,
-            //                    Chakra = 14,
-            //                    MaxChakra = 40,
-            //                    ChakraPerSecond = 10
-            //                }
-            //            }
-            //        };
-
-            //        await _gameWorld.AddNonPlayerToWorldAsync(state, nonPlayerSpawnTemplate);
-
-            //        state.Script?.OnSpawn();
-            //    }
-            //}
 
             while (!stoppingToken.IsCancellationRequested)
             {
@@ -109,6 +59,9 @@ namespace Leatha.WarOfTheElements.Server.Services
                     // Process Spells.
                     _gameWorld.ProcessSpells(FixedDt);
 
+                    // Process Projectiles.
+                    _gameWorld.ProcessProjectiles(FixedDt);
+
                     // Process Auras.
                     _gameWorld.ProcessAuras(FixedDt);
 
@@ -118,12 +71,15 @@ namespace Leatha.WarOfTheElements.Server.Services
                     // Process physics.
                     _physicsWorld.Step((float)FixedDt);
 
-                    if (_gameWorld.Players.Any())
-                    {
-                        var body = _gameWorld.Players.SingleOrDefault();
-                        if (_physicsWorld.TryGetPlayerTransform(body.Value.Body, out var pos, out var o, out var isGrounded))
-                            Debug.WriteLine($"DEBUG PHYS-BEPU POS {pos} | Ori {o} | IsGrounded = {isGrounded}");
-                    }
+                    //if (_gameWorld.Players.Any())
+                    //{
+                    //    var body = _gameWorld.Players.SingleOrDefault();
+                    //    if (_physicsWorld.TryGetPlayerTransform(body.Value.Body, out var pos, out var o, out var isGrounded))
+                    //        Debug.WriteLine($"DEBUG PHYS-BEPU POS {pos} | Ori {o} | IsGrounded = {isGrounded}");
+                    //}
+
+                    // Must be called AFTER Physics process.
+                    _gameWorld.HandleProjectileHits();
 
                     // Synchronize characters from physics.
                     _gameWorld.SynchronizeCharactersFromPhysics(FixedDt);

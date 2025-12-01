@@ -2,13 +2,16 @@
 using BepuPhysics.Collidables;
 using BepuUtilities;
 using BepuUtilities.Memory;
+using Leatha.WarOfTheElements.Common.Communication.Transfer;
+using Leatha.WarOfTheElements.Common.Communication.Utilities;
 using Leatha.WarOfTheElements.Common.Environment.Collisions;
 using Leatha.WarOfTheElements.World.Terrain;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Numerics;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Leatha.WarOfTheElements.Common.Communication.Utilities;
+using Leatha.WarOfTheElements.Common.Communication.Transfer.Enums;
 
 namespace Leatha.WarOfTheElements.World.Physics
 {
@@ -20,7 +23,7 @@ namespace Leatha.WarOfTheElements.World.Physics
         {
             _bufferPool = new BufferPool();
 
-            var narrowPhaseCallbacks = new SimpleNarrowPhaseCallbacks();
+            var narrowPhaseCallbacks = new SimpleNarrowPhaseCallbacks(this);
             var poseIntegratorCallbacks = new SimplePoseIntegratorCallbacks(gravity);
 
             _simulation = Simulation.Create(
@@ -44,6 +47,18 @@ namespace Leatha.WarOfTheElements.World.Physics
 
         // Random GUID -> StaticHandle
         private readonly Dictionary<Guid, StaticHandle> _staticBodies = new();
+
+        // ProjectileId -> BodyHandle
+        private readonly Dictionary<Guid, BodyHandle> _projectileBodies = new();
+
+        // ProjectileId -> CollidableReference.
+        private readonly ConcurrentQueue<(Guid projectileId, CollidableReference other)> _projectileHits = new();
+
+        // *** Reverse Lookups ***
+        private readonly Dictionary<BodyHandle, Guid> _bodyToPlayer = new();
+        private readonly Dictionary<BodyHandle, Guid> _bodyToNonPlayer = new();
+        private readonly Dictionary<StaticHandle, Guid> _staticToGameObject = new();
+        private readonly Dictionary<BodyHandle, Guid> _bodyToProjectile = new();
 
         // Optional heightfield for terrain
         private TerrainHeightfield? _terrain;
@@ -192,6 +207,7 @@ namespace Leatha.WarOfTheElements.World.Physics
                 var handle = _simulation.Bodies.Add(bodyDesc);
 
                 _playerBodies[playerId] = handle;
+                _bodyToPlayer[handle] = playerId;
 
                 return handle;
             }
@@ -211,6 +227,7 @@ namespace Leatha.WarOfTheElements.World.Physics
                 _simulation.Shapes.Remove(shapeIndex);
 
                 _playerBodies.Remove(playerId);
+                _bodyToPlayer.Remove(handle);
             }
         }
 
@@ -253,6 +270,7 @@ namespace Leatha.WarOfTheElements.World.Physics
                 var handle = _simulation.Bodies.Add(bodyDesc);
 
                 _nonPlayerBodies[nonPlayerId] = handle;
+                _bodyToNonPlayer[handle] = nonPlayerId;
 
                 return handle;
             }
@@ -272,6 +290,7 @@ namespace Leatha.WarOfTheElements.World.Physics
                 _simulation.Shapes.Remove(shapeIndex);
 
                 _nonPlayerBodies.Remove(nonPlayerId);
+                _bodyToNonPlayer.Remove(handle);
             }
         }
 
@@ -301,6 +320,7 @@ namespace Leatha.WarOfTheElements.World.Physics
                 var handle = _simulation.Statics.Add(staticDescription);
 
                 _gameObjectBodies[gameObjectId] = handle;
+                _staticToGameObject[handle] = gameObjectId;
 
                 return handle;
             }
@@ -321,7 +341,9 @@ namespace Leatha.WarOfTheElements.World.Physics
 
                 var handle = _simulation.Statics.Add(staticDescription);
 
-                _staticBodies[Guid.NewGuid()] = handle;
+                var guid = Guid.NewGuid();
+                _staticBodies[guid] = handle;
+                _staticToGameObject[handle] = guid;
 
                 return handle;
             }
@@ -362,6 +384,207 @@ namespace Leatha.WarOfTheElements.World.Physics
 
 
 
+        public BodyHandle AddProjectile(Guid projectileId, Vector3 position, Vector3 initialVelocity,
+            float radius = 0.25f, float mass = 1f)
+        {
+            lock (_simLock)
+            {
+                if (_projectileBodies.TryGetValue(projectileId, out var existing))
+                    return existing;
+
+                var sphere = new Sphere(radius);
+                var shapeIndex = _simulation.Shapes.Add(sphere);
+
+                var inertia = sphere.ComputeInertia(mass);
+
+                var pose = new RigidPose(position);
+                var collidable = new CollidableDescription(shapeIndex, 0.1f);
+                var activity = new BodyActivityDescription(sleepThreshold: 0.01f);
+
+                var bodyDesc = BodyDescription.CreateDynamic(pose, inertia, collidable, activity);
+                var handle = _simulation.Bodies.Add(bodyDesc);
+
+                var bodyRef = _simulation.Bodies.GetBodyReference(handle);
+                bodyRef.Velocity.Linear = initialVelocity;
+
+                _projectileBodies[projectileId] = handle;
+                _bodyToProjectile[handle] = projectileId;
+
+                return handle;
+            }
+        }
+
+        public void SetProjectileVelocity(Guid projectileId, Vector3 velocity)
+        {
+            lock (_simLock)
+            {
+                if (!_projectileBodies.TryGetValue(projectileId, out var handle))
+                    return;
+
+                var body = _simulation.Bodies.GetBodyReference(handle);
+                body.Velocity.Linear = velocity;
+                body.Awake = true;
+            }
+        }
+
+        public void KeepProjectileNoGravity(Guid projectileId)
+        {
+            lock (_simLock)
+            {
+                if (!_projectileBodies.TryGetValue(projectileId, out var handle))
+                    return;
+
+                var body = _simulation.Bodies.GetBodyReference(handle);
+                var v = body.Velocity.Linear;
+                v.Y = 0f;                // remove vertical/gravity component
+                body.Velocity.Linear = v;
+            }
+        }
+
+        public bool TryGetProjectileId(BodyHandle handle, out Guid projectileId)
+            => _bodyToProjectile.TryGetValue(handle, out projectileId);
+
+        public void QueueProjectileHit(Guid projectileId, CollidableReference other)
+            => _projectileHits.Enqueue((projectileId, other));
+
+        public ConcurrentQueue<(Guid projectileId, CollidableReference other)> GetCurrentProjectileHits()
+        {
+            return _projectileHits;
+        }
+
+        //public BodyHandle AddProjectile(Guid projectileId, Vector3 position, Vector3 initialVelocity,
+        //    float radius = 0.25f, float mass = 1f)
+        //{
+        //    lock (_simLock)
+        //    {
+        //        if (_projectileBodies.TryGetValue(projectileId, out var existing))
+        //            return existing;
+
+        //        // Simple sphere projectile
+        //        var sphere = new Sphere(radius);
+        //        var shapeIndex = _simulation.Shapes.Add(sphere);
+
+        //        var inertia = sphere.ComputeInertia(mass);
+
+        //        var pose = new RigidPose(position);
+        //        var collidable = new CollidableDescription(shapeIndex, 0.1f);
+        //        var activity = new BodyActivityDescription(sleepThreshold: 0.01f);
+
+        //        var bodyDesc = BodyDescription.CreateDynamic(pose, inertia, collidable, activity);
+        //        var handle = _simulation.Bodies.Add(bodyDesc);
+
+        //        var bodyRef = _simulation.Bodies.GetBodyReference(handle);
+        //        bodyRef.Velocity.Linear = initialVelocity;
+
+        //        _projectileBodies[projectileId] = handle;
+        //        return handle;
+        //    }
+        //}
+
+        public void RemoveProjectile(Guid projectileId)
+        {
+            lock (_simLock)
+            {
+                if (!_projectileBodies.TryGetValue(projectileId, out var handle))
+                    return;
+
+                var body = _simulation.Bodies[handle];
+                var shapeIndex = body.Collidable.Shape;
+
+                _simulation.Bodies.Remove(handle);
+                _simulation.Shapes.Remove(shapeIndex);
+
+                _projectileBodies.Remove(projectileId);
+                _bodyToProjectile.Remove(handle);
+            }
+        }
+
+        public bool TryGetProjectileTransform(BodyHandle handle, out Vector3 position, out Quaternion orientation)
+        {
+            lock (_simLock)
+            {
+                if (!_simulation.Bodies.BodyExists(handle))
+                {
+                    position = Vector3.Zero;
+                    orientation = Quaternion.Identity;
+                    return false;
+                }
+
+                var body = _simulation.Bodies[handle];
+                position = body.Pose.Position;
+                orientation = body.Pose.Orientation;
+                return true;
+            }
+        }
+
+        public bool TryMapCollidableToWorldObject(CollidableReference collidable, out WorldObjectId result)
+        {
+            lock (_simLock)
+            {
+                if (collidable.Mobility == CollidableMobility.Dynamic)
+                {
+                    var bh = collidable.BodyHandle;
+
+                    if (_bodyToPlayer.TryGetValue(bh, out var playerId))
+                    {
+                        result = new WorldObjectId(playerId, WorldObjectType.Player);
+                        return true;
+                    }
+
+                    if (_bodyToNonPlayer.TryGetValue(bh, out var nonPlayerId))
+                    {
+                        result = new WorldObjectId(nonPlayerId, WorldObjectType.NonPlayer);
+                        return true;
+                    }
+
+                    if (_bodyToProjectile.TryGetValue(bh, out var projectileId))
+                    {
+                        // Only if you want projectiles as “world objects”.
+                        result = new WorldObjectId(projectileId, WorldObjectType.Projectile);
+                        return true;
+                    }
+                }
+                else // Static / kinematic
+                {
+                    var sh = collidable.StaticHandle;
+
+                    if (_staticToGameObject.TryGetValue(sh, out var gameObjectId))
+                    {
+                        result = new WorldObjectId(gameObjectId, WorldObjectType.GameObject);
+                        return true;
+                    }
+                }
+            }
+
+            result = default;
+            return false;
+        }
+
+        public Vector3 MoveProjectileKinematic(
+            Guid spellGuid,
+            Vector3 newVelocity, // X/Z from ComputeDesiredVelocity (desired horizontal speed)
+            float dt)
+        {
+            lock (_simLock)
+            {
+                if (!_projectileBodies.TryGetValue(spellGuid, out var handle))
+                    return Vector3.Zero;
+
+                var body = _simulation.Bodies.GetBodyReference(handle);
+
+                var pos = body.Pose.Position + newVelocity * dt;
+                body.Pose.Position = pos;
+
+                // We don't use Bepu's dynamic velocity for this character.
+                // Zero it so gravity from the pose integrator doesn't influence pose.
+                body.Velocity.Linear = Vector3.Zero;
+
+                return pos;
+            }
+        }
+
+
+
 
         public Vector3 MovePlayerDynamic(
             Guid playerId,
@@ -386,10 +609,10 @@ namespace Leatha.WarOfTheElements.World.Physics
                 var beforePos = body.Pose.Position;
                 var beforeVel = body.Velocity.Linear;
 
-                Debug.WriteLine(
-                    $"[PHYS-IN] pos=<{beforePos.X:0.00},{beforePos.Y:0.00},{beforePos.Z:0.00}> " +
-                    $"vel=<{beforeVel.X:0.00},{beforeVel.Y:0.00},{beforeVel.Z:0.00}> " +
-                    $"desired=<{desiredVelocity.X:0.00},{desiredVelocity.Y:0.00},{desiredVelocity.Z:0.00}>");
+                //Debug.WriteLine(
+                //    $"[PHYS-IN] pos=<{beforePos.X:0.00},{beforePos.Y:0.00},{beforePos.Z:0.00}> " +
+                //    $"vel=<{beforeVel.X:0.00},{beforeVel.Y:0.00},{beforeVel.Z:0.00}> " +
+                //    $"desired=<{desiredVelocity.X:0.00},{desiredVelocity.Y:0.00},{desiredVelocity.Z:0.00}>");
 
                 // Read authoritative velocity from the physics body.
                 var v = body.Velocity.Linear;
@@ -451,8 +674,8 @@ namespace Leatha.WarOfTheElements.World.Physics
                 body.Velocity.Linear = v;
                 body.Awake = true; // or: _simulation.Awakener.AwakenBody(handle);
 
-                Debug.WriteLine(
-                    $"[PHYS-OUT] vel=<{v.X:0.00},{v.Y:0.00},{v.Z:0.00}> jump={jump} wasGround={wasOnGround}");
+                //Debug.WriteLine(
+                //    $"[PHYS-OUT] vel=<{v.X:0.00},{v.Y:0.00},{v.Z:0.00}> jump={jump} wasGround={wasOnGround}");
 
                 return v;
             }
@@ -508,7 +731,7 @@ namespace Leatha.WarOfTheElements.World.Physics
                 }
 
                 // Apply manual gravity
-                v.Y += gravityY * dt;
+                //v.Y += gravityY * dt;
 
                 // --- 3) Integrate position with full velocity ---
                 pos += v * dt;
@@ -591,7 +814,7 @@ namespace Leatha.WarOfTheElements.World.Physics
                 }
 
                 // Apply manual gravity
-                v.Y += gravityY * dt;
+                //v.Y += gravityY * dt;
 
                 // --- 3) Integrate position with full velocity ---
                 pos += v * dt;

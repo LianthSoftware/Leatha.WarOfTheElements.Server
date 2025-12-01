@@ -567,6 +567,45 @@ namespace Leatha.WarOfTheElements.Server.Services
                     SpellFlags = SpellFlags.IsEnhancement,
                     SpellIconPath = "res://resources/textures/spell_water_enhancement.jpg",
                 },
+                
+                
+                
+                new SpellTemplate
+                {
+                    SpellId = 13,
+                    SpellName = "Fireball",
+                    SpellDescription = "Continuously emits jet of water in front of the caster, dealing 40 damage every second and slowing the target's movement speed by 70%. Must be channeled. Lasts 8 seconds.",
+                    SpellRank = new SpellRank
+                    {
+                        SpellId = 13,
+                        Rank = 1,
+                        FirstRankSpellId = 13,
+                        PreviousRankSpellId = null,
+                        NextRankSpellId = null,
+                    },
+                    CastTime = 2000,
+                    Cooldown = 0,
+                    Duration = 10000,
+                    ElementChakraCosts = new Dictionary<ElementTypes, int>
+                    {
+                        { ElementTypes.Fire, 20 }
+                    },
+                    ElementTypes = ElementTypes.Fire,
+                    SpellEffects = new List<SpellEffectObject>
+                    {
+                        new SpellEffectObject
+                        {
+                            SpellId = 13,
+                            EffectType = SpellEffectType.DealDamage,
+                            Value1 = 30,
+                            Value2 = 40
+                        }
+                    },
+                    SpellTargets = SpellTargets.CasterDirection,
+                    SpellFlags = SpellFlags.IsProjectile,
+                    SpellIconPath = "res://resources/textures/spells/spell_fire_fireball.jpg",
+                    VisualSpellPath = "res://scenes/controls/effects/spells/spell_fireball.tscn"
+                },
 
 
 

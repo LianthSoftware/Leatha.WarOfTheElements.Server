@@ -43,6 +43,10 @@ namespace Leatha.WarOfTheElements.Common.Communication.Messages
         [JsonPropertyName("gameObjects")]
         public List<GameObjectStateObject> GameObjects { get; set; } = [];
 
+        [Required]
+        [JsonPropertyName("spells")]
+        public List<SpellObject> Spells { get; set; } = [];
+
         //public List<NonPlayerStateObject> Effects { get; set; } = []; // #TODO
     }
 }

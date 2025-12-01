@@ -7,6 +7,7 @@ using Leatha.WarOfTheElements.Server.DataAccess.Entities.Templates;
 using Leatha.WarOfTheElements.Server.Demo;
 using Leatha.WarOfTheElements.Server.Objects.Characters;
 using Leatha.WarOfTheElements.Server.Objects.GameObjects;
+using Leatha.WarOfTheElements.Server.Objects.Spells;
 
 namespace Leatha.WarOfTheElements.Server.Utilities
 {
@@ -113,6 +114,29 @@ namespace Leatha.WarOfTheElements.Server.Utilities
             };
         }
 
+        public static ProjectileStateObject AsTransferObject(this ProjectileState entity)
+        {
+            return new ProjectileStateObject
+            {
+                ProjectileId = entity.ProjectileId,
+                SpellGuid = entity.SpellGuid,
+                CasterId = entity.CasterId,
+                SpellId = entity.SpellId,
+                MapId = entity.MapId,
+                InstanceId = entity.InstanceId,
+                Position = entity.Position,
+                Orientation = entity.Orientation,
+                Velocity = entity.Velocity,
+                RemainingLifetimeMs = entity.RemainingLifetimeMs,
+                Launched = entity.Launched
+            };
+        }
+
+
+
+
+
+
         public static SpellRankObject AsTransferObject(this SpellRank entity)
         {
             return new SpellRankObject
@@ -141,7 +165,8 @@ namespace Leatha.WarOfTheElements.Server.Utilities
                 SpellRank = entity.SpellRank?.AsTransferObject(),
                 ElementTypes = entity.ElementTypes,
                 SpellEffects = entity.SpellEffects,
-                SpellIconPath = entity.SpellIconPath
+                SpellIconPath = entity.SpellIconPath,
+                VisualSpellPath = entity.VisualSpellPath
             };
         }
 

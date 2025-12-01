@@ -14,6 +14,8 @@ using Leatha.WarOfTheElements.Server.Utilities;
 using MongoDB.Driver;
 using MongoDB.Driver.Core.Clusters;
 using System.Diagnostics;
+using System.Numerics;
+using Leatha.WarOfTheElements.Server.Objects.Spells;
 
 namespace Leatha.WarOfTheElements.Server.Services
 {
@@ -96,7 +98,7 @@ namespace Leatha.WarOfTheElements.Server.Services
             var spellObject = PrepareSpell(spellInfo, caster);
             var script = await _scriptService.CreateScriptAsync(spellObject);
 
-            _gameWorld.RegisterSpell(spellObject, script);
+            var spell = _gameWorld.RegisterSpell(spellObject, script);
 
             // #TODO: finish it.
             var calculatedValue = CalculateValue(caster, spellObject);
@@ -111,7 +113,8 @@ namespace Leatha.WarOfTheElements.Server.Services
             }
 
             // Instant cast.
-            if (spellInfo.CastTime <= 0)
+            var isInstantCast = spellInfo.CastTime <= 0;
+            if (isInstantCast)
             {
                 spellObject.IsCastFinished = true;
                 spellObject.RemainingCastTime = 0.0f;
@@ -124,10 +127,58 @@ namespace Leatha.WarOfTheElements.Server.Services
             // Remove chakra.
             TakeChakra(caster, spellObject);
 
+            // Fire projectile.
+            //if (spellObject.SpellInfo.SpellFlags.HasFlag(SpellFlags.IsProjectile))
+            //{
+            //    var direction = GetProjectileDirection(spellObject.Caster);
+            //    var origin = spellObject.Caster.Position + direction * 1.0f + new Vector3(0, 1.5f, 0); // in front & a bit up
+            //    var state = _gameWorld.AddProjectile(
+            //        spellObject,
+            //        origin,
+            //        direction,
+            //        10.0f,
+            //        0.15f, // #TODO: FROM DB!!!!!!!
+            //        10000);
+
+            //    spell.ProjectileState = state;
+            //    spellObject.ProjectileState = state.AsTransferObject();
+            //}
+
+            if (spellObject.SpellInfo.SpellFlags.HasFlag(SpellFlags.IsProjectile))
+            {
+                var dir = GetProjectileDirection(spellObject.Caster);
+                var origin = caster.Position + dir * -0.5f + new Vector3(0, 1.5f, 0);
+
+                spell.ProjectileState = _gameWorld.AddProjectile(
+                    spellObject,
+                    origin,
+                    dir,
+                    speed: 10f,       // or from SpellInfo
+                    radius: 0.25f,
+                    lifetimeMs: 4000f,
+                    launchedImmediately: isInstantCast);
+            }
+
             // Send spell cast start.
             await _serverHandler.SendSpellStart(spellObject, caster.AsTransferObject());
 
+            spell.IsReady = true;
+
             return TransferMessage.CreateMessage(SpellCastResult.Ok);
+        }
+
+        private static Vector3 GetProjectileDirection(ICharacterStateObject caster)
+        {
+            // Forward direction from caster yaw
+            var yaw = caster.Yaw;
+            var dir = new Vector3(
+                MathF.Sin(yaw),
+                0f,
+                MathF.Cos(yaw)); // assuming +Z forward
+
+            dir = Vector3.Normalize(dir);
+
+            return dir;
         }
 
         private float CalculateValue(ICharacterState caster, SpellObject spellObject)
