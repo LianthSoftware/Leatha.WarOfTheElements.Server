@@ -1,12 +1,12 @@
 ﻿using Leatha.WarOfTheElements.Common.Communication.Transfer;
 using Leatha.WarOfTheElements.Common.Communication.Transfer.Enums;
 using Leatha.WarOfTheElements.Server.DataAccess.Entities.Templates;
-using Leatha.WarOfTheElements.Server.Demo;
-using Leatha.WarOfTheElements.Server.Objects.Game;
 using Leatha.WarOfTheElements.Server.Utilities;
 using MongoDB.Driver;
 using System.Collections.Concurrent;
 using System.Numerics;
+using Leatha.WarOfTheElements.Common.Communication.Utilities;
+using Leatha.WarOfTheElements.Server.Objects.Spells;
 
 namespace Leatha.WarOfTheElements.Server.Services
 {
@@ -48,6 +48,18 @@ namespace Leatha.WarOfTheElements.Server.Services
         Task<List<GameObjectSpawnTemplate>> GetGameObjectSpawnTemplatesAsync(int nonPlayerId);
 
 
+        Task<List<AreaTriggerTemplate>> GetAreaTriggerTemplatesAsync();
+
+        Task<AreaTriggerTemplate?> GetAreaTriggerTemplateAsync(int areaTriggerId);
+
+
+        Task<List<AreaTriggerScriptTemplate>> GetAreaTriggerScriptTemplatesAsync();
+
+        Task<List<AreaTriggerScriptTemplate>> GetAreaTriggerScriptTemplatesAsync(int areaTriggerId);
+
+        Task<AreaTriggerScriptTemplate?> GetAreaTriggerScriptTemplateAsync(int areaTriggerId, int eventId);
+
+
 
         Task ReloadTemplatesAsync();
 
@@ -69,6 +81,10 @@ namespace Leatha.WarOfTheElements.Server.Services
         Task<List<GameObjectTemplate>> CreateGameObjectTemplatesAsync();
 
         Task<List<GameObjectSpawnTemplate>> CreateGameObjectSpawnTemplatesAsync();
+
+        Task<List<AreaTriggerTemplate>> CreateAreaTriggerTemplatesAsync();
+
+        Task<List<AreaTriggerScriptTemplate>> CreateAreaTriggerScriptTemplatesAsync();
     }
 
     public sealed class TemplateService : ITemplateService
@@ -87,6 +103,8 @@ namespace Leatha.WarOfTheElements.Server.Services
         private readonly ConcurrentBag<NonPlayerSpawnTemplate> _nonPlayerSpawnTemplates = [];
         private readonly ConcurrentBag<GameObjectTemplate> _gameObjectTemplates = [];
         private readonly ConcurrentBag<GameObjectSpawnTemplate> _gameObjectSpawnTemplates = [];
+        private readonly ConcurrentBag<AreaTriggerTemplate> _areaTriggerTemplates = [];
+        private readonly ConcurrentBag<AreaTriggerScriptTemplate> _areaTriggerScriptTemplates = [];
 
         public async Task<List<MapTemplate>> GetMapTemplatesAsync()
         {
@@ -301,6 +319,98 @@ namespace Leatha.WarOfTheElements.Server.Services
             return templates;
         }
 
+        public async Task<List<AreaTriggerTemplate>> GetAreaTriggerTemplatesAsync()
+        {
+            var filter = Builders<AreaTriggerTemplate>.Filter.Empty;
+            var templates = await _mongoGameDatabase.GetMongoCollection<AreaTriggerTemplate>()
+                .Find(filter)
+                .ToListAsync();
+
+            _areaTriggerTemplates.Clear();
+            foreach (var template in templates)
+                _areaTriggerTemplates.Add(template);
+
+            return templates;
+        }
+
+        public async Task<AreaTriggerTemplate?> GetAreaTriggerTemplateAsync(int areaTriggerId)
+        {
+            // First, try to get from cache.
+            var cacheTemplate = _areaTriggerTemplates.SingleOrDefault(i => i.AreaTriggerId == areaTriggerId);
+            if (cacheTemplate != null)
+                return cacheTemplate;
+
+            var filter = Builders<AreaTriggerTemplate>.Filter.Eq(i => i.AreaTriggerId, areaTriggerId);
+            var template = await _mongoGameDatabase.GetMongoCollection<AreaTriggerTemplate>()
+                .Find(filter)
+                .SingleOrDefaultAsync();
+
+            // Add to cache.
+            if (template != null)
+                _areaTriggerTemplates.Add(template);
+
+            return template;
+        }
+
+        public async Task<List<AreaTriggerScriptTemplate>> GetAreaTriggerScriptTemplatesAsync()
+        {
+            var filter = Builders<AreaTriggerScriptTemplate>.Filter.Empty;
+            var templates = await _mongoGameDatabase.GetMongoCollection<AreaTriggerScriptTemplate>()
+                .Find(filter)
+                .ToListAsync();
+
+            _areaTriggerScriptTemplates.Clear();
+            foreach (var template in templates)
+                _areaTriggerScriptTemplates.Add(template);
+
+            return templates;
+        }
+
+        public async Task<List<AreaTriggerScriptTemplate>> GetAreaTriggerScriptTemplatesAsync(int areaTriggerId)
+        {
+            // First, try to get from cache.
+            var cacheTemplates = _areaTriggerScriptTemplates
+                .Where(i => i.AreaTriggerId == areaTriggerId)
+                .ToList();
+
+            if (cacheTemplates.Any())
+                return cacheTemplates;
+
+            var filter = Builders<AreaTriggerScriptTemplate>.Filter.Eq(i => i.AreaTriggerId, areaTriggerId);
+            var templates = await _mongoGameDatabase.GetMongoCollection<AreaTriggerScriptTemplate>()
+                .Find(filter)
+                .ToListAsync();
+
+            // Add to cache.
+            foreach (var template in templates)
+                _areaTriggerScriptTemplates.Add(template);
+
+            return templates;
+        }
+
+        public async Task<AreaTriggerScriptTemplate?> GetAreaTriggerScriptTemplateAsync(int areaTriggerId, int eventIndex)
+        {
+            // First, try to get from cache.
+            var cacheTemplate = _areaTriggerScriptTemplates
+                .SingleOrDefault(i =>
+                    i.AreaTriggerId == areaTriggerId &&
+                    i.EventIndex == eventIndex);
+
+            if (cacheTemplate != null)
+                return cacheTemplate;
+
+            var filter = Builders<AreaTriggerScriptTemplate>.Filter.Eq(i => i.AreaTriggerId, areaTriggerId);
+            var template = await _mongoGameDatabase.GetMongoCollection<AreaTriggerScriptTemplate>()
+                .Find(filter)
+                .SingleOrDefaultAsync();
+
+            // Add to cache.
+            if (template != null)
+                _areaTriggerScriptTemplates.Add(template);
+
+            return template;
+        }
+
         public async Task ReloadTemplatesAsync()
         {
             // Cache is cleared inside each call.
@@ -312,6 +422,8 @@ namespace Leatha.WarOfTheElements.Server.Services
                 await GetNonPlayerSpawnTemplatesAsync();
                 await GetGameObjectTemplatesAsync();
                 await GetGameObjectSpawnTemplatesAsync();
+                await GetAreaTriggerTemplatesAsync();
+                await GetAreaTriggerScriptTemplatesAsync();
             }
         }
 
@@ -324,13 +436,15 @@ namespace Leatha.WarOfTheElements.Server.Services
             await CreateNonPlayerSpawnTemplatesAsync();
             await CreateGameObjectTemplatesAsync();
             await CreateGameObjectSpawnTemplatesAsync();
+            await CreateAreaTriggerTemplatesAsync();
+            await CreateAreaTriggerScriptTemplatesAsync();
         }
 
         public async Task<List<SpellTemplate>> CreateSpellTemplatesAsync()
         {
             var templates = new List<SpellTemplate>
             {
-                new SpellTemplate
+                new()
                 {
                     SpellId = 1,
                     SpellName = "Water Bolt",
@@ -345,11 +459,28 @@ namespace Leatha.WarOfTheElements.Server.Services
                     },
                     CastTime = 1500,
                     Cooldown = 0,
-                    Duration = 0,
+                    Duration = 10000,
                     ElementTypes = ElementTypes.Water,
+                    ElementChakraCosts = new Dictionary<ElementTypes, int>
+                    {
+                        { ElementTypes.Water, 10 }
+                    },
+                    SpellEffects =
+                    [
+                        new SpellEffectObject
+                        {
+                            SpellId = 1,
+                            EffectType = SpellEffectType.DealDamage,
+                            Value1 = 30,
+                            Value2 = 40
+                        }
+                    ],
+                    SpellTargets = SpellTargets.CasterDirection,
+                    SpellFlags = SpellFlags.IsProjectile,
                     SpellIconPath = "res://resources/textures/spells/spell_water_water_bolt.jpg",
+                    VisualSpellPath = "res://scenes/controls/effects/spells/spell_water_bolt.tscn"
                 },
-                new SpellTemplate
+                new()
                 {
                     SpellId = 2,
                     SpellName = "Rain Dance",
@@ -368,7 +499,7 @@ namespace Leatha.WarOfTheElements.Server.Services
                     ElementTypes = ElementTypes.Water,
                     SpellIconPath = "res://resources/textures/spells/spell_water_water_rain.jpg",
                 },
-                new SpellTemplate
+                new()
                 {
                     SpellId = 3,
                     SpellName = "Water Wave",
@@ -387,7 +518,7 @@ namespace Leatha.WarOfTheElements.Server.Services
                     ElementTypes = ElementTypes.Water,
                     SpellIconPath = "res://resources/textures/spells/spell_water_water_wave.jpg",
                 },
-                new SpellTemplate
+                new()
                 {
                     SpellId = 4,
                     SpellName = "Water Clone",
@@ -406,7 +537,7 @@ namespace Leatha.WarOfTheElements.Server.Services
                     ElementTypes = ElementTypes.Water,
                     SpellIconPath = "res://resources/textures/spells/spell_water_water_clone.jpg",
                 },
-                new SpellTemplate
+                new()
                 {
                     SpellId = 5,
                     SpellName = "Water Dragon",
@@ -425,7 +556,7 @@ namespace Leatha.WarOfTheElements.Server.Services
                     ElementTypes = ElementTypes.Water,
                     SpellIconPath = "res://resources/textures/spells/spell_water_water_dragon.jpg",
                 },
-                new SpellTemplate
+                new()
                 {
                     SpellId = 6,
                     SpellName = "Water Prison",
@@ -445,7 +576,7 @@ namespace Leatha.WarOfTheElements.Server.Services
                     SpellFlags = SpellFlags.IsChanneled,
                     SpellIconPath = "res://resources/textures/spells/spell_water_water_prison.jpg",
                 },
-                new SpellTemplate
+                new()
                 {
                     SpellId = 7,
                     SpellName = "Water Slide",
@@ -464,7 +595,7 @@ namespace Leatha.WarOfTheElements.Server.Services
                     ElementTypes = ElementTypes.Water,
                     SpellIconPath = "res://resources/textures/spells/spell_water_water_slide.jpg",
                 },
-                new SpellTemplate
+                new()
                 {
                     SpellId = 8,
                     SpellName = "Water Jet",
@@ -487,7 +618,7 @@ namespace Leatha.WarOfTheElements.Server.Services
 
 
 
-                new SpellTemplate
+                new()
                 {
                     SpellId = 9,
                     SpellName = "ENHANCEMENT ONE",
@@ -507,7 +638,7 @@ namespace Leatha.WarOfTheElements.Server.Services
                     SpellFlags = SpellFlags.IsEnhancement,
                     SpellIconPath = "res://resources/textures/spell_frost_frost.jpg",
                 },
-                new SpellTemplate
+                new()
                 {
                     SpellId = 10,
                     SpellName = "ENHANCEMENT TWO",
@@ -527,7 +658,7 @@ namespace Leatha.WarOfTheElements.Server.Services
                     SpellFlags = SpellFlags.IsEnhancement,
                     SpellIconPath = "res://resources/textures/spell_frost_frostbolt.jpg",
                 },
-                new SpellTemplate
+                new()
                 {
                     SpellId = 11,
                     SpellName = "ENHANCEMENT THREE",
@@ -547,7 +678,7 @@ namespace Leatha.WarOfTheElements.Server.Services
                     SpellFlags = SpellFlags.IsEnhancement,
                     SpellIconPath = "res://resources/textures/spell_frost_frozencore.jpg",
                 },
-                new SpellTemplate
+                new()
                 {
                     SpellId = 12,
                     SpellName = "ENHANCEMENT FOUR",
@@ -570,7 +701,7 @@ namespace Leatha.WarOfTheElements.Server.Services
                 
                 
                 
-                new SpellTemplate
+                new()
                 {
                     SpellId = 13,
                     SpellName = "Fireball",
@@ -593,7 +724,7 @@ namespace Leatha.WarOfTheElements.Server.Services
                     ElementTypes = ElementTypes.Fire,
                     SpellEffects = new List<SpellEffectObject>
                     {
-                        new SpellEffectObject
+                        new()
                         {
                             SpellId = 13,
                             EffectType = SpellEffectType.DealDamage,
@@ -619,7 +750,7 @@ namespace Leatha.WarOfTheElements.Server.Services
 
 
 
-                new SpellTemplate
+                new()
                 {
                     SpellId = 1000,
                     SpellName = "HEAL",
@@ -642,7 +773,7 @@ namespace Leatha.WarOfTheElements.Server.Services
                     ElementTypes = ElementTypes.Water,
                     SpellEffects = new List<SpellEffectObject>
                     {
-                        new SpellEffectObject
+                        new()
                         {
                             SpellId = 1000,
                             EffectType = SpellEffectType.Heal,
@@ -654,7 +785,7 @@ namespace Leatha.WarOfTheElements.Server.Services
                     SpellIconPath = "res://resources/textures/icon_ground.png",
                     //ScriptName = "camera_damage_visual_test"
                 },
-                new SpellTemplate
+                new()
                 {
                     SpellId = 1001,
                     SpellName = "Cast HEAL",
@@ -677,7 +808,7 @@ namespace Leatha.WarOfTheElements.Server.Services
                     ElementTypes = ElementTypes.Water,
                     SpellEffects = new List<SpellEffectObject>
                     {
-                        new SpellEffectObject
+                        new()
                         {
                             SpellId = 1001,
                             EffectType = SpellEffectType.Heal,
@@ -689,7 +820,7 @@ namespace Leatha.WarOfTheElements.Server.Services
                     SpellIconPath = "res://resources/textures/icon_ground.png",
                     //ScriptName = "camera_damage_visual_test"
                 },
-                new SpellTemplate
+                new()
                 {
                     SpellId = 1002,
                     SpellName = "DAMAGE",
@@ -712,7 +843,7 @@ namespace Leatha.WarOfTheElements.Server.Services
                     ElementTypes = ElementTypes.Fire,
                     SpellEffects = new List<SpellEffectObject>
                     {
-                        new SpellEffectObject
+                        new()
                         {
                             SpellId = 1002,
                             EffectType = SpellEffectType.DealDamage,
@@ -724,7 +855,7 @@ namespace Leatha.WarOfTheElements.Server.Services
                     SpellIconPath = "res://resources/textures/icon_fire.png",
                     //ScriptName = "camera_damage_visual_test"
                 },
-                new SpellTemplate
+                new()
                 {
                     SpellId = 1003,
                     SpellName = "DAMAGE Cast",
@@ -747,7 +878,7 @@ namespace Leatha.WarOfTheElements.Server.Services
                     ElementTypes = ElementTypes.Fire,
                     SpellEffects = new List<SpellEffectObject>
                     {
-                        new SpellEffectObject
+                        new()
                         {
                             SpellId = 1003,
                             EffectType = SpellEffectType.DealDamage,
@@ -759,7 +890,7 @@ namespace Leatha.WarOfTheElements.Server.Services
                     SpellIconPath = "res://resources/textures/icon_lightning.png",
                     //ScriptName = "camera_damage_visual_test"
                 },
-                new SpellTemplate
+                new()
                 {
                     SpellId = 1004,
                     SpellName = "Periodic Heal TEST",
@@ -783,7 +914,7 @@ namespace Leatha.WarOfTheElements.Server.Services
                     ElementTypes = ElementTypes.Air,
                     SpellEffects = new List<SpellEffectObject>
                     {
-                        new SpellEffectObject
+                        new()
                         {
                             SpellId = 1004,
                             EffectType = SpellEffectType.ApplyAura,
@@ -794,7 +925,7 @@ namespace Leatha.WarOfTheElements.Server.Services
                     SpellIconPath = "res://resources/textures/icon_wind.png",
                     //ScriptName = "camera_damage_visual_test"
                 },
-                new SpellTemplate
+                new()
                 {
                     SpellId = 1005,
                     SpellName = "Periodic Damage TEST",
@@ -818,7 +949,7 @@ namespace Leatha.WarOfTheElements.Server.Services
                     ElementTypes = ElementTypes.Air,
                     SpellEffects = new List<SpellEffectObject>
                     {
-                        new SpellEffectObject
+                        new()
                         {
                             SpellId = 1004,
                             EffectType = SpellEffectType.ApplyAura,
@@ -844,7 +975,7 @@ namespace Leatha.WarOfTheElements.Server.Services
         {
             var templates = new List<AuraTemplate>
             {
-                new AuraTemplate
+                new()
                 {
                     AuraId = 10000,
                     SpellId = 1004,
@@ -853,7 +984,7 @@ namespace Leatha.WarOfTheElements.Server.Services
                     ElementTypes = ElementTypes.Air,
                     AuraEffects = new List<AuraEffectObject>
                     {
-                        new AuraEffectObject
+                        new()
                         {
                             AuraId = 10000,
                             EffectType = AuraEffectType.PeriodicHeal,
@@ -866,7 +997,7 @@ namespace Leatha.WarOfTheElements.Server.Services
                     TicksCount = 5,
                     ScriptName = null
                 },
-                new AuraTemplate
+                new()
                 {
                     AuraId = 10001,
                     SpellId = 1005,
@@ -875,7 +1006,7 @@ namespace Leatha.WarOfTheElements.Server.Services
                     ElementTypes = ElementTypes.Air,
                     AuraEffects = new List<AuraEffectObject>
                     {
-                        new AuraEffectObject
+                        new()
                         {
                             AuraId = 10001,
                             EffectType = AuraEffectType.PeriodicDamage,
@@ -903,7 +1034,7 @@ namespace Leatha.WarOfTheElements.Server.Services
         {
             var templates = new List<MapTemplate>
             {
-                new MapTemplate
+                new()
                 {
                     MapId = 1,
                     MapName = "Initial Player Creation Spawn Map",
@@ -912,9 +1043,19 @@ namespace Leatha.WarOfTheElements.Server.Services
                     MapSizeX = 100,
                     MapSizeY = 100,
                 },
+                new()
+                {
+                    MapId = 3,
+                    MapName = "Monastery Of The Great Five",
+                    MapDescription = "Main base for the followers of the five elements.",
+                    MapPath = "res://scenes/maps/map003/monastery_chatgp_003.tscn",
+                    MapSizeX = 500,
+                    MapSizeY = 500,
+                    MapFlags = MapFlags.DevelopmentMap,
+                },
 
                 // *** TEST MAPS (Not Production) ***
-                new MapTemplate
+                new()
                 {
                     MapId = 1000,
                     MapName = "Movement Test Map",
@@ -939,7 +1080,7 @@ namespace Leatha.WarOfTheElements.Server.Services
         {
             var templates = new List<NonPlayerTemplate>
             {
-                new NonPlayerTemplate
+                new()
                 {
                     NonPlayerId = 1,
                     Name = "Magus Cedrik",
@@ -971,7 +1112,7 @@ namespace Leatha.WarOfTheElements.Server.Services
         {
             var templates = new List<NonPlayerSpawnTemplate>
             {
-                new NonPlayerSpawnTemplate
+                new()
                 {
                     NonPlayerId = 1,
                     MapId = 1,
@@ -993,35 +1134,35 @@ namespace Leatha.WarOfTheElements.Server.Services
         {
             var templates = new List<GameObjectTemplate>
             {
-                new GameObjectTemplate
+                new()
                 {
                     GameObjectId = 1,
                     Name = "Fire Element Core",
                     ColliderArchetypeId = 0, // #TODO
                     SceneName = "res://scenes/controls/effects/initial_map_element_light_control.tscn"
                 },
-                new GameObjectTemplate
+                new()
                 {
                     GameObjectId = 2,
                     Name = "Air Element Core",
                     ColliderArchetypeId = 0, // #TODO
                     SceneName = "res://scenes/controls/effects/initial_map_element_light_control.tscn"
                 },
-                new GameObjectTemplate
+                new()
                 {
                     GameObjectId = 3,
                     Name = "Lightning Element Core",
                     ColliderArchetypeId = 0, // #TODO
                     SceneName = "res://scenes/controls/effects/initial_map_element_light_control.tscn"
                 },
-                new GameObjectTemplate
+                new()
                 {
                     GameObjectId = 4,
                     Name = "Nature Element Core",
                     ColliderArchetypeId = 0, // #TODO
                     SceneName = "res://scenes/controls/effects/initial_map_element_light_control.tscn"
                 },
-                new GameObjectTemplate
+                new()
                 {
                     GameObjectId = 5,
                     Name = "Water Element Core",
@@ -1029,26 +1170,35 @@ namespace Leatha.WarOfTheElements.Server.Services
                     SceneName = "res://scenes/controls/effects/initial_map_element_light_control.tscn"
                 },
 
-                new GameObjectTemplate
+                new()
                 {
                     GameObjectId = 6,
                     Name = "Primary Chakra Pillar",
                     ColliderArchetypeId = 0, // #TODO
                     SceneName = "res://scenes/controls/effects/initial_map_element_pillar.tscn"
                 },
-                new GameObjectTemplate
+                new()
                 {
                     GameObjectId = 7,
                     Name = "Secondary Chakra Pillar",
                     ColliderArchetypeId = 0, // #TODO
                     SceneName = "res://scenes/controls/effects/initial_map_element_pillar.tscn"
                 },
-                new GameObjectTemplate
+                new()
                 {
                     GameObjectId = 8,
                     Name = "Tertiary Chakra Pillar",
                     ColliderArchetypeId = 0, // #TODO
                     SceneName = "res://scenes/controls/effects/initial_map_element_pillar.tscn"
+                },
+
+
+                new()
+                {
+                    GameObjectId = 9,
+                    Name = "Torch",
+                    ColliderArchetypeId = 0, // #TODO
+                    SceneName = "res://scenes/controls/effects/common/torch_control.tscn"
                 },
             };
 
@@ -1065,63 +1215,103 @@ namespace Leatha.WarOfTheElements.Server.Services
         {
             var templates = new List<GameObjectSpawnTemplate>
             {
-                new GameObjectSpawnTemplate
+                new()
                 {
                     GameObjectId = 6,
                     MapId = 1,
                     SpawnPosition = new Vector3(0.0f, 2.5f, 5.5f),
                     Orientation = Quaternion.Identity,
+                    NodeName = "map_001_primary_chakra_pillar"
                 },
-                new GameObjectSpawnTemplate
+                new()
                 {
                     GameObjectId = 7,
                     MapId = 1,
                     SpawnPosition = new Vector3(0.0f, 2.5f, -5.5f),
                     Orientation = Quaternion.Identity,
+                    NodeName = "map_001_secondary_chakra_pillar"
                 },
-                new GameObjectSpawnTemplate
+                new()
                 {
                     GameObjectId = 8,
                     MapId = 1,
                     SpawnPosition = new Vector3(-5.5f, 2.5f, 0.0f),
                     Orientation = Quaternion.Identity,
+                    NodeName = "map_001_tertiary_chakra_pillar"
                 },
 
-                //new GameObjectSpawnTemplate
-                //{
-                //    GameObjectId = 1,
-                //    MapId = 1,
-                //    SpawnPosition = new Vector3(17.0f, 0f, 25.0f),
-                //    Orientation = Quaternion.Identity,
-                //},
-                //new GameObjectSpawnTemplate
-                //{
-                //    GameObjectId = 2,
-                //    MapId = 1,
-                //    SpawnPosition = new Vector3(-17.0f, 0f, 25.0f),
-                //    Orientation = Quaternion.Identity,
-                //},
-                //new GameObjectSpawnTemplate
-                //{
-                //    GameObjectId = 3,
-                //    MapId = 1,
-                //    SpawnPosition = new Vector3(-25.0f, 0f, 0.0f),
-                //    Orientation = Quaternion.Identity,
-                //},
-                //new GameObjectSpawnTemplate
-                //{
-                //    GameObjectId = 4,
-                //    MapId = 1,
-                //    SpawnPosition = new Vector3(-18.0f, 0f, -25.0f),
-                //    Orientation = Quaternion.Identity,
-                //},
-                //new GameObjectSpawnTemplate
-                //{
-                //    GameObjectId = 5,
-                //    MapId = 1,
-                //    SpawnPosition = new Vector3(17.0f, 0f, -25.0f),
-                //    Orientation = Quaternion.Identity,
-                //},
+                new()
+                {
+                    GameObjectId = 9,
+                    MapId = 1,
+                    SpawnPosition = new Vector3(55.0f, 2.65f, 12.75f),
+                    Orientation = new Vector3(-30.0f, 0.0f, 0.0f).FromEulerDegrees(),
+                    NodeName = "map_001_torch_001"
+                },
+                new()
+                {
+                    GameObjectId = 9,
+                    MapId = 1,
+                    SpawnPosition = new Vector3(55.0f, 2.65f, -12.75f),
+                    Orientation = new Vector3(-30.0f, -180.0f, 0.0f).FromEulerDegrees(),
+                    NodeName = "map_001_torch_002"
+                },
+                new()
+                {
+                    GameObjectId = 9,
+                    MapId = 1,
+                    SpawnPosition = new Vector3(33.5f, 2.65f, 12.75f),
+                    Orientation = new Vector3(-30.0f, 0.0f, 0.0f).FromEulerDegrees(),
+                    NodeName = "map_001_torch_003"
+                },
+                new()
+                {
+                    GameObjectId = 9,
+                    MapId = 1,
+                    SpawnPosition = new Vector3(33.5f, 2.65f, -12.75f),
+                    Orientation = new Vector3(-30.0f, -180.0f, 0.0f).FromEulerDegrees(),
+                    NodeName = "map_001_torch_004"
+                },
+                new()
+                {
+                    GameObjectId = 9,
+                    MapId = 1,
+                    SpawnPosition = new Vector3(18.33f, 2.65f, 28.75f),
+                    Orientation = new Vector3(-30.0f, 0.0f, 0.0f).FromEulerDegrees(),
+                    NodeName = "map_001_torch_005"
+                },
+                new()
+                {
+                    GameObjectId = 9,
+                    MapId = 1,
+                    SpawnPosition = new Vector3(18.33f, 2.65f, -28.75f),
+                    Orientation = new Vector3(-30.0f, -180.0f, 0.0f).FromEulerDegrees(),
+                    NodeName = "map_001_torch_006"
+                },
+                new()
+                {
+                    GameObjectId = 9,
+                    MapId = 1,
+                    SpawnPosition = new Vector3(-18.33f, 2.65f, 28.75f),
+                    Orientation = new Vector3(-30.0f, 0.0f, 0.0f).FromEulerDegrees(),
+                    NodeName = "map_001_torch_007"
+                },
+                new()
+                {
+                    GameObjectId = 9,
+                    MapId = 1,
+                    SpawnPosition = new Vector3(-18.33f, 2.65f, -28.75f),
+                    Orientation = new Vector3(-30.0f, -180.0f, 0.0f).FromEulerDegrees(),
+                    NodeName = "map_001_torch_008"
+                },
+                new()
+                {
+                    GameObjectId = 9,
+                    MapId = 1,
+                    SpawnPosition = new Vector3(-28.75f, 2.65f, 0.0f),
+                    Orientation = new Vector3(-30.0f, -90.0f, 0.0f).FromEulerDegrees(),
+                    NodeName = "map_001_torch_009"
+                },
             };
 
             await _mongoGameDatabase.GetMongoCollection<GameObjectSpawnTemplate>()
@@ -1131,6 +1321,133 @@ namespace Leatha.WarOfTheElements.Server.Services
                 return templates;
 
             await _mongoGameDatabase.GetMongoCollection<GameObjectSpawnTemplate>()
+                .InsertManyAsync(templates);
+
+            return templates;
+        }
+
+        public async Task<List<AreaTriggerTemplate>> CreateAreaTriggerTemplatesAsync()
+        {
+            var templates = new List<AreaTriggerTemplate>
+            {
+                new()
+                {
+                    AreaTriggerId = 1,
+                    AreaTriggerName = "Initial Map Torches Trigger",
+                    MapId = 1,
+                    SpawnPosition = new Vector3(28.5f, 1.0f, 0.0f),
+                    Orientation = Quaternion.Identity,
+                    Radius = 15.0f,
+                    Flags = AreaTriggerFlags.OneShot
+                },
+            };
+
+            await _mongoGameDatabase.GetMongoCollection<AreaTriggerTemplate>()
+                .DeleteManyAsync(Builders<AreaTriggerTemplate>.Filter.Empty);
+
+            if (!templates.Any())
+                return templates;
+
+            await _mongoGameDatabase.GetMongoCollection<AreaTriggerTemplate>()
+                .InsertManyAsync(templates);
+
+            return templates;
+        }
+
+        public async Task<List<AreaTriggerScriptTemplate>> CreateAreaTriggerScriptTemplatesAsync()
+        {
+            var templates = new List<AreaTriggerScriptTemplate>
+            {
+                new()
+                {
+                    AreaTriggerId = 1,
+                    EventIndex = 0,
+                    ActionType = AreaTriggerActionType.ActivateGameObject,
+                    TargetType = WorldObjectType.GameObject,
+                    TargetNodeName = "map_001_torch_001",
+                    Delay = 0.0f,
+                },
+                new()
+                {
+                    AreaTriggerId = 1,
+                    EventIndex = 1,
+                    ActionType = AreaTriggerActionType.ActivateGameObject,
+                    TargetType = WorldObjectType.GameObject,
+                    TargetNodeName = "map_001_torch_002",
+                    Delay = 0.0f,
+                },
+                new()
+                {
+                    AreaTriggerId = 1,
+                    EventIndex = 2,
+                    ActionType = AreaTriggerActionType.ActivateGameObject,
+                    TargetType = WorldObjectType.GameObject,
+                    TargetNodeName = "map_001_torch_003",
+                    Delay = 0.75f,
+                },
+                new()
+                {
+                    AreaTriggerId = 1,
+                    EventIndex = 3,
+                    ActionType = AreaTriggerActionType.ActivateGameObject,
+                    TargetType = WorldObjectType.GameObject,
+                    TargetNodeName = "map_001_torch_004",
+                    Delay = 0.75f,
+                },
+                new()
+                {
+                    AreaTriggerId = 1,
+                    EventIndex = 4,
+                    ActionType = AreaTriggerActionType.ActivateGameObject,
+                    TargetType = WorldObjectType.GameObject,
+                    TargetNodeName = "map_001_torch_005",
+                    Delay = 1.5f,
+                },
+                new()
+                {
+                    AreaTriggerId = 1,
+                    EventIndex = 5,
+                    ActionType = AreaTriggerActionType.ActivateGameObject,
+                    TargetType = WorldObjectType.GameObject,
+                    TargetNodeName = "map_001_torch_006",
+                    Delay = 1.5f,
+                },
+                new()
+                {
+                    AreaTriggerId = 1,
+                    EventIndex = 6,
+                    ActionType = AreaTriggerActionType.ActivateGameObject,
+                    TargetType = WorldObjectType.GameObject,
+                    TargetNodeName = "map_001_torch_007",
+                    Delay = 2.25f,
+                },
+                new()
+                {
+                    AreaTriggerId = 1,
+                    EventIndex = 7,
+                    ActionType = AreaTriggerActionType.ActivateGameObject,
+                    TargetType = WorldObjectType.GameObject,
+                    TargetNodeName = "map_001_torch_008",
+                    Delay = 2.25f,
+                },
+                new()
+                {
+                    AreaTriggerId = 1,
+                    EventIndex = 8,
+                    ActionType = AreaTriggerActionType.ActivateGameObject,
+                    TargetType = WorldObjectType.GameObject,
+                    TargetNodeName = "map_001_torch_009",
+                    Delay = 3.0f,
+                },
+            };
+
+            await _mongoGameDatabase.GetMongoCollection<AreaTriggerScriptTemplate>()
+                .DeleteManyAsync(Builders<AreaTriggerScriptTemplate>.Filter.Empty);
+
+            if (!templates.Any())
+                return templates;
+
+            await _mongoGameDatabase.GetMongoCollection<AreaTriggerScriptTemplate>()
                 .InsertManyAsync(templates);
 
             return templates;

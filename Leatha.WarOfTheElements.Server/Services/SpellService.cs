@@ -6,7 +6,6 @@ using Leatha.WarOfTheElements.Common.Communication.Transfer.Enums;
 using Leatha.WarOfTheElements.Common.Communication.Utilities;
 using Leatha.WarOfTheElements.Server.DataAccess.Entities;
 using Leatha.WarOfTheElements.Server.DataAccess.Entities.Templates;
-using Leatha.WarOfTheElements.Server.Demo;
 using Leatha.WarOfTheElements.Server.Objects.Characters;
 using Leatha.WarOfTheElements.Server.Objects.Game;
 using Leatha.WarOfTheElements.Server.Scripts.Spells;
@@ -153,7 +152,8 @@ namespace Leatha.WarOfTheElements.Server.Services
                     spellObject,
                     origin,
                     dir,
-                    speed: 10f,       // or from SpellInfo
+                    //speed: 10f,       // or from SpellInfo
+                    speed: 0.1f,
                     radius: 0.25f,
                     lifetimeMs: 4000f,
                     launchedImmediately: isInstantCast);

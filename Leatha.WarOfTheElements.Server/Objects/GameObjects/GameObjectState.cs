@@ -18,6 +18,8 @@ namespace Leatha.WarOfTheElements.Server.Objects.GameObjects
 
         public string GameObjectName { get; set; } = null!;
 
+        public string NodeName { get; set; } = null!;
+
         public int MapId { get; set; }
 
         public Guid? InstanceId { get; set; }

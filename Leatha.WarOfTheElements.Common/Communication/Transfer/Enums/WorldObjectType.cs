@@ -13,5 +13,6 @@ namespace Leatha.WarOfTheElements.Common.Communication.Transfer.Enums
         NonPlayer                       = 2,
         GameObject                      = 3,
         Projectile                      = 4,
+        AreaTrigger                     = 5,
     }
 }

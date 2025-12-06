@@ -11,5 +11,7 @@ namespace Leatha.WarOfTheElements.Server.DataAccess.Entities.Templates
         public Vector3 SpawnPosition { get; set; }
 
         public Quaternion Orientation { get; set; }
+
+        public string NodeName { get; set; } = null!;
     }
 }

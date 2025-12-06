@@ -11,8 +11,6 @@ namespace Leatha.WarOfTheElements.Server.Objects.Characters
 {
     public sealed class NonPlayerState : ICharacterState
     {
-        public Guid NonPlayerId { get; set; }
-
         public int TemplateId { get; set; }
 
         public WorldObjectId WorldObjectId { get; }
@@ -72,7 +70,6 @@ namespace Leatha.WarOfTheElements.Server.Objects.Characters
 
         public NonPlayerState(Guid nonPlayerId, Vector3 position)
         {
-            NonPlayerId = nonPlayerId;
             Position = position;
 
             WorldObjectId = new WorldObjectId(nonPlayerId, WorldObjectType.NonPlayer);
@@ -81,7 +78,6 @@ namespace Leatha.WarOfTheElements.Server.Objects.Characters
 
         public NonPlayerState(Guid nonPlayerId, Vector3 position, Quaternion orientation)
         {
-            NonPlayerId = nonPlayerId;
             Position = position;
             Orientation = orientation;
 

@@ -1,6 +1,6 @@
 ﻿using Leatha.WarOfTheElements.Common.Communication.Transfer;
 using Leatha.WarOfTheElements.Common.Communication.Transfer.Enums;
-using Leatha.WarOfTheElements.Server.Demo;
+using Leatha.WarOfTheElements.Server.Objects.Spells;
 using MongoDB.Bson.Serialization.Attributes;
 using MongoDB.Bson.Serialization.Options;
 

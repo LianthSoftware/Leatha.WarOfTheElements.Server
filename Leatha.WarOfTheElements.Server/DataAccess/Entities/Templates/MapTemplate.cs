@@ -16,6 +16,8 @@ namespace Leatha.WarOfTheElements.Server.DataAccess.Entities.Templates
 
         public int MapSizeY { get; set; }
 
+        public int MaxPlayers { get; set; }
+
         public MapFlags MapFlags { get; set; }
     }
 }

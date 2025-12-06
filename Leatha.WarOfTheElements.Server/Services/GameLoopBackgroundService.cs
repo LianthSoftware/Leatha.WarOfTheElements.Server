@@ -56,6 +56,9 @@ namespace Leatha.WarOfTheElements.Server.Services
                     // Process NPCs.
                     _gameWorld.ProcessNonPlayers(FixedDt);
 
+                    // Process Area Triggers.
+                    _gameWorld.ProcessAreaTriggers(FixedDt);
+
                     // Process Spells.
                     _gameWorld.ProcessSpells(FixedDt);
 
@@ -90,41 +93,6 @@ namespace Leatha.WarOfTheElements.Server.Services
 
                 // Send snapshots.
                 await _gameWorld.SendSnapshotAsync(FixedDt, tick, stoppingToken);
-
-                // 4) Build snapshots grouped by (MapId, InstanceId)
-                //var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0;
-
-                //var groups = _gameWorld.Players
-                //    .Values
-                //    .GroupBy(p => (p.MapId, p.InstanceId));
-
-                //foreach (var group in groups)
-                //{
-                //    var (mapId, instanceId) = group.Key;
-
-                //    // #TODO: Maybe group this before?
-                //    var nonPlayers = _gameWorld
-                //        .NonPlayers
-                //        .Where(i =>
-                //            i.Value.MapId == mapId &&
-                //            (!instanceId.HasValue || i.Value.InstanceId == instanceId))
-                //        .Select(i => i.Value.AsTransferObject())
-                //        .ToList();
-
-                //    var snapshot = new WorldSnapshotMessage
-                //    {
-                //        Tick = tick,
-                //        ServerTime = now,
-                //        MapId = mapId,
-                //        InstanceId = instanceId,
-                //        Players = group
-                //            .Select(p => p.AsTransferObject())
-                //            .ToList(),
-                //        NonPlayers = nonPlayers
-                //    };
-
-                //    await _serverClientHandler.SendSnapshot(snapshot, stoppingToken);
-                //}
 
                 // Tiny sleep to avoid tight busy-wait
                 await Task.Delay(1, stoppingToken);

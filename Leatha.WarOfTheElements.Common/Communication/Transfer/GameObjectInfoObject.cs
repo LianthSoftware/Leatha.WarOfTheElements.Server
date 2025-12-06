@@ -21,5 +21,9 @@ namespace Leatha.WarOfTheElements.Common.Communication.Transfer
         [Required]
         [JsonPropertyName("sceneName")]
         public string SceneName { get; set; } = null!;
+
+        [Required]
+        [JsonPropertyName("nodeName")]
+        public string NodeName { get; set; } = null!;
     }
 }

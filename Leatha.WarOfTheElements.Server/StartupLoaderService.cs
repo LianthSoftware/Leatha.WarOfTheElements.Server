@@ -85,7 +85,8 @@ namespace Leatha.WarOfTheElements.Server
                 physicsWorld.AddTerrain(terrain);
             }
             else
-                physicsWorld.AddFlatGround(500.0f, 500.0f, 0.0f);
+                //physicsWorld.AddFlatGround(500.0f, 500.0f, 0.0f); // #TODO
+                physicsWorld.AddFlatGround(500.0f, 500.0f, 0.25f); // #TODO
         }
 
         private void LoadScripts()
@@ -97,6 +98,7 @@ namespace Leatha.WarOfTheElements.Server
             scriptService.LoadNonPlayerScripts();
             scriptService.LoadSpellScripts();
             scriptService.LoadAuraScripts();
+            scriptService.LoadAreaTriggerScripts();
         }
 
         public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

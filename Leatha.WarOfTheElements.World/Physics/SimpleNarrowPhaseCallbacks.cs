@@ -15,14 +15,14 @@ namespace Leatha.WarOfTheElements.World.Physics
     /// </summary>
     public struct SimpleNarrowPhaseCallbacks : INarrowPhaseCallbacks
     {
-        private readonly PhysicsWorld _physicsWorld;
-        private Simulation _simulation;
-
         public SimpleNarrowPhaseCallbacks(PhysicsWorld physicsWorld)
         {
             _physicsWorld = physicsWorld;
             _simulation = null!;
         }
+
+        private readonly PhysicsWorld _physicsWorld;
+        private Simulation _simulation;
 
         public void Initialize(Simulation simulation)
         {

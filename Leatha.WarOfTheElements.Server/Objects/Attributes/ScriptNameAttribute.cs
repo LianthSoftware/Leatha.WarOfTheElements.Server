@@ -20,5 +20,6 @@
         NonPlayer                       = 1,
         Spell                           = 2,
         Aura                            = 3,
+        AreaTrigger                     = 4,
     }
 }

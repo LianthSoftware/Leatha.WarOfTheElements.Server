@@ -6,6 +6,8 @@ using Leatha.WarOfTheElements.Server.Utilities;
 using MongoDB.Driver;
 using System.Reflection;
 using Leatha.WarOfTheElements.Common.Communication.Transfer;
+using Leatha.WarOfTheElements.Server.Objects.AreaTriggers;
+using Leatha.WarOfTheElements.Server.Scripts.AreaTriggers;
 using Leatha.WarOfTheElements.Server.Scripts.Auras;
 using Leatha.WarOfTheElements.Server.Scripts.Spells;
 
@@ -19,11 +21,15 @@ namespace Leatha.WarOfTheElements.Server.Services
 
         Task<AuraScriptBase?> CreateScriptAsync(AuraObject auraObject);
 
+        Task<AreaTriggerScript?> CreateScriptAsync(AreaTriggerState auraObject);
+
         void LoadNonPlayerScripts();
 
         void LoadSpellScripts();
 
         void LoadAuraScripts();
+
+        void LoadAreaTriggerScripts();
     }
 
     public sealed class ScriptService : IScriptService
@@ -38,6 +44,10 @@ namespace Leatha.WarOfTheElements.Server.Services
         public Dictionary<string, Type> NonPlayerScripts { get; private set; } = [];
 
         public Dictionary<string, Type> SpellScripts { get; private set; } = [];
+
+        public Dictionary<string, Type> AuraScripts { get; private set; } = [];
+
+        public Dictionary<string, Type> AreaTriggerScripts { get; private set; } = [];
 
         public async Task<NonPlayerScriptBase?> CreateScriptAsync(NonPlayerState state)
         {
@@ -76,6 +86,11 @@ namespace Leatha.WarOfTheElements.Server.Services
 
             var script = Activator.CreateInstance(type, auraObject, template) as AuraScriptBase;
             return script;
+        }
+
+        public Task<AreaTriggerScript?> CreateScriptAsync(AreaTriggerState auraObject)
+        {
+            throw new NotImplementedException();
         }
 
         public void LoadNonPlayerScripts()
@@ -121,7 +136,7 @@ namespace Leatha.WarOfTheElements.Server.Services
                 throw new InvalidOperationException(
                     $"Could not retrieve assembly for type = \"{typeof(ScriptService).FullName}\".");
 
-            SpellScripts = assembly
+            AuraScripts = assembly
                 .GetTypes()
                 .Select(t => new
                 {
@@ -129,6 +144,24 @@ namespace Leatha.WarOfTheElements.Server.Services
                     Attr = t.GetCustomAttribute<ScriptNameAttribute>()
                 })
                 .Where(x => x.Attr is { ScriptType: ScriptType.Aura })
+                .ToDictionary(x => x.Attr!.Name, x => x.Type);
+        }
+
+        public void LoadAreaTriggerScripts()
+        {
+            var assembly = typeof(ScriptService).Assembly;
+            if (assembly == null)
+                throw new InvalidOperationException(
+                    $"Could not retrieve assembly for type = \"{typeof(ScriptService).FullName}\".");
+
+            AreaTriggerScripts = assembly
+                .GetTypes()
+                .Select(t => new
+                {
+                    Type = t,
+                    Attr = t.GetCustomAttribute<ScriptNameAttribute>()
+                })
+                .Where(x => x.Attr is { ScriptType: ScriptType.AreaTrigger })
                 .ToDictionary(x => x.Attr!.Name, x => x.Type);
         }
     }

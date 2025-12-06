@@ -6,19 +6,23 @@ using Leatha.WarOfTheElements.Common.Communication.Utilities;
 using Leatha.WarOfTheElements.Common.Environment.Collisions;
 using Leatha.WarOfTheElements.Server.DataAccess.Entities;
 using Leatha.WarOfTheElements.Server.DataAccess.Entities.Templates;
+using Leatha.WarOfTheElements.Server.Objects.AreaTriggers;
 using Leatha.WarOfTheElements.Server.Objects.Characters;
 using Leatha.WarOfTheElements.Server.Objects.GameObjects;
+using Leatha.WarOfTheElements.Server.Objects.Maps;
 using Leatha.WarOfTheElements.Server.Objects.Spells;
 using Leatha.WarOfTheElements.Server.Scripts.Auras;
 using Leatha.WarOfTheElements.Server.Scripts.Spells;
 using Leatha.WarOfTheElements.Server.Services;
 using Leatha.WarOfTheElements.Server.Utilities;
 using Leatha.WarOfTheElements.World.Physics;
+using MongoDB.Bson;
 using MongoDB.Driver;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Numerics;
 using System.Text.RegularExpressions;
+using Leatha.WarOfTheElements.Server.Scripts.AreaTriggers;
 
 namespace Leatha.WarOfTheElements.Server.Objects.Game
 {
@@ -28,11 +32,17 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
 
         ConcurrentDictionary<Guid, NonPlayerState> NonPlayers { get; }
 
+        public ConcurrentDictionary<Guid, AreaTriggerState> AreaTriggers { get; }
+
         ConcurrentDictionary<Guid, GameObjectState> GameObjects { get; }
 
         ConcurrentDictionary<Guid, Spell> Spells { get; }
 
         ConcurrentDictionary<Guid, Aura> Auras { get; }
+
+        ConcurrentDictionary<Guid, ProjectileState> Projectiles { get; }
+
+        ConcurrentDictionary<Guid, MapState> Maps { get; }
 
 
         Spell RegisterSpell(SpellObject spellObject, SpellScriptBase? spellScript);
@@ -53,7 +63,7 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
 
         ICharacterState? GetCharacterState(WorldObjectId worldObjectId);
 
-        Task AddPlayerToWorldAsync(PlayerState? state);
+        Task<TransferMessage> AddPlayerToWorldAsync(PlayerState? state);
 
         Task RemovePlayerFromWorldAsync(PlayerState? state);
 
@@ -69,6 +79,8 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
         NonPlayerState? RemoveNonPlayerState(Guid nonPlayerId);
 
         Task AddNonPlayerToWorldAsync(NonPlayerState? state, NonPlayerSpawnTemplate spawnTemplate);
+
+        Task AddAreaTriggerToWorldAsync(AreaTriggerState? state, AreaTriggerTemplate areaTriggerTemplate);
 
         void RemovePlayerFromWorld(NonPlayerState? state);
 
@@ -94,6 +106,8 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
         void ProcessPlayerInputs(List<PlayerInputObject> inputs, double fixedDelta);
 
         void ProcessNonPlayers(double fixedDelta);
+
+        void ProcessAreaTriggers(double fixedDelta);
 
         void ProcessChakra(double fixedDelta);
 
@@ -143,6 +157,8 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
 
         public ConcurrentDictionary<Guid, NonPlayerState> NonPlayers { get; } = new();
 
+        public ConcurrentDictionary<Guid, AreaTriggerState> AreaTriggers { get; } = new();
+
         public ConcurrentDictionary<Guid, GameObjectState> GameObjects { get; } = new();
 
         public ConcurrentDictionary<Guid, Spell> Spells { get; } = new();
@@ -151,8 +167,7 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
 
         public ConcurrentDictionary<Guid, ProjectileState> Projectiles { get; } = new();
 
-
-        private readonly Dictionary<int, LoadedMapInfo> _loadedMaps = [];
+        public ConcurrentDictionary<Guid, MapState> Maps { get; } = new();
 
         private readonly IMongoDatabase _mongoGameDatabase;
         private readonly IGameHubService _gameHubService;
@@ -252,15 +267,25 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
             return GameObjects.GetValueOrDefault(gameObjectId.ObjectId);
         }
 
-        public async Task AddPlayerToWorldAsync(PlayerState? playerState)
+        public async Task<TransferMessage> AddPlayerToWorldAsync(PlayerState? playerState)
         {
             if (playerState == null)
-                return;
+                return TransferMessage.CreateErrorMessage("Player State is null.", "Player State is null.");
 
-            if (!_loadedMaps.ContainsKey(playerState.MapId))
+            // Find map by MapId and InstanceId.
+            var mapState = Maps.SingleOrDefault(i =>
+                i.Value.MapId == playerState.MapId &&
+                i.Value.InstanceId == playerState.InstanceId)
+                .Value;
+
+            if (mapState == null)
             {
                 // Load map.
-                await LoadMapAsync(playerState.MapId);
+                mapState = await LoadMapAsync(playerState.MapId, playerState.InstanceId);
+                if (mapState == null)
+                    return TransferMessage.CreateErrorMessage(
+                        "Map could not be loaded",
+                        $"Map with MapId = \"{ playerState.MapId }\" and InstanceId = \"{ playerState.InstanceId }\" could not be loaded.");
             }
 
             // Add body to physics
@@ -275,6 +300,8 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
 
             await _serverClientHandler.PlayerEnteredMap(playerState.AsTransferObject());
             //_ = DelayedPlayerEnteredMap(playerState);
+
+            return TransferMessage.CreateMessage();
         }
 
         private async Task DelayedPlayerEnteredMap(PlayerState playerState)
@@ -284,8 +311,22 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
             await _serverClientHandler.PlayerEnteredMap(playerState.AsTransferObject());
         }
 
-        private async Task LoadMapAsync(int mapId)
+        private async Task<MapState?> LoadMapAsync(int mapId, Guid? instanceId)
         {
+            var mapTemplate = await _templateService.GetMapTemplateAsync(mapId);
+            if (mapTemplate == null)
+                return null;
+
+            var mapState = instanceId.HasValue
+                ? new InstanceMapState() // Instance Map.
+                : new MapState();        // Normal Map.
+
+            mapState.MapGuid = Guid.NewGuid();
+            mapState.MapId = mapId;
+            mapState.InstanceId = instanceId;
+            mapState.MapName = mapTemplate.MapName;
+            mapState.MaxPlayers = mapTemplate.MaxPlayers;
+
             // Load static environment game objects.
             {
                 var filter = Builders<EnvironmentInstance>.Filter.Eq(i => i.MapId, mapId);
@@ -294,12 +335,38 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
                     .Find(filter)
                     .ToListAsync();
 
-                Debug.WriteLine($"Found \"{ envStaticInstances.Count }\" instances.");
+                Debug.WriteLine($"Found \"{ envStaticInstances.Count }\" environment instances on map = \"{ mapId }\".");
 
                 // #TODO: Load it.
                 foreach (var instance in envStaticInstances)
                 {
                     _physicsWorld.AddEnvironmentObject(instance.AsTransferObject());
+                }
+            }
+
+            // Area Triggers.
+            {
+                var areaTriggerTemplates = await _templateService.GetAreaTriggerTemplatesAsync();
+                var templates = areaTriggerTemplates
+                    .Where(i => i.MapId == mapId)
+                    .ToList();
+
+                Debug.WriteLine($"Found \"{ templates.Count}\" area triggers on map = \"{mapId}\".");
+
+                // #TODO: Load it.
+                foreach (var template in templates)
+                {
+                    var state = new AreaTriggerState(Guid.NewGuid(), template.SpawnPosition, template.Orientation)
+                    {
+                        AreaTriggerName = template.AreaTriggerName,
+                        TemplateId = template.AreaTriggerId,
+                        MapId = template.MapId,
+                        InstanceId = instanceId
+                    };
+
+                    await AddAreaTriggerToWorldAsync(state, template);
+
+                    //state.Script?.OnSpawn();
                 }
             }
 
@@ -310,6 +377,9 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
                     .Where(i => i.MapId == mapId)
                     .GroupBy(i => i.NonPlayerId)
                     .ToDictionary(i => i.Key, n => n.ToList());
+
+                Debug.WriteLine($"Found \"{templates.Count}\" non player characters on map = \"{mapId}\".");
+
                 foreach (var template in templates)
                 {
                     var nonPlayerTemplate = await _templateService.GetNonPlayerTemplateAsync(template.Key);
@@ -327,6 +397,7 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
                             CharacterLevel = nonPlayerTemplate.Level,
                             TemplateId = template.Key,
                             MapId = nonPlayerSpawnTemplate.MapId,
+                            InstanceId = instanceId,
                             Velocity = Vector3.Zero,
                             Resources = new CharacterResourceObject // #TODO: From some other table or non player template?
                             {
@@ -357,6 +428,8 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
                     .GroupBy(i => i.GameObjectId)
                     .ToDictionary(i => i.Key, n => n.ToList());
 
+                Debug.WriteLine($"Found \"{templates.Count}\" game objects characters on map = \"{mapId}\".");
+
                 foreach (var template in templates)
                 {
                     var gameObjectTemplate = await _templateService.GetGameObjectTemplateAsync(template.Key);
@@ -371,8 +444,10 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
                         var state = new GameObjectState(Guid.NewGuid(), gameObjectSpawnTemplate.SpawnPosition, gameObjectSpawnTemplate.Orientation)
                         {
                             GameObjectName = gameObjectTemplate.Name,
+                            NodeName = gameObjectSpawnTemplate.NodeName,
                             TemplateId = template.Key,
                             MapId = gameObjectSpawnTemplate.MapId,
+                            InstanceId = instanceId
                         };
 
                         await AddGameObjectToWorldAsync(state, gameObjectSpawnTemplate);
@@ -382,11 +457,8 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
                 }
             }
 
-            _loadedMaps.Add(mapId, new LoadedMapInfo
-            {
-                MapId = mapId,
-                InstanceId = null
-            });
+            mapState = Maps.GetOrAdd(mapState.MapGuid, mapState);
+            return mapState;
         }
 
         public sealed class LoadedMapInfo
@@ -431,7 +503,7 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
                 return;
 
             // Add body to physics
-            var playerBody = _physicsWorld.AddNonPlayer(state.NonPlayerId, state.Position, state.Orientation);
+            var playerBody = _physicsWorld.AddNonPlayer(state.WorldObjectId.ObjectId, state.Position, state.Orientation);
             state.SetPhysicsBody(playerBody, spawnTemplate.SpawnPosition, spawnTemplate.Orientation);
 
             var script = await _scriptService.CreateScriptAsync(state);
@@ -442,7 +514,31 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
             }
 
             // Register in the in-memory game world so GameLoop sees it
-            NonPlayers[state.NonPlayerId] = state;
+            NonPlayers[state.WorldObjectId.ObjectId] = state;
+        }
+
+        public async Task AddAreaTriggerToWorldAsync(AreaTriggerState? state, AreaTriggerTemplate areaTriggerTemplate)
+        {
+            if (state == null)
+                return;
+
+            // Add body to physics
+            var playerBody = _physicsWorld.AddNonPlayer(state.WorldObjectId.ObjectId, state.Position, state.Orientation);
+            state.SetPhysicsBody(playerBody, areaTriggerTemplate.SpawnPosition, areaTriggerTemplate.Orientation);
+
+            //var script = await _scriptService.CreateScriptAsync(state); // #TODO:
+            var script = new AreaTriggerScript(state, areaTriggerTemplate);
+            //if (script != null)
+            {
+                var scripts = await _templateService.GetAreaTriggerScriptTemplatesAsync(state.TemplateId);
+
+                script.SetGameWorld(this);
+                script.SetAreaTriggerEvents(scripts);
+                state.SetScript(script);
+            }
+
+            // Register in the in-memory game world so GameLoop sees it
+            AreaTriggers[state.WorldObjectId.ObjectId] = state;
         }
 
         public async Task AddGameObjectToWorldAsync(GameObjectState? state, GameObjectSpawnTemplate spawnTemplate)
@@ -479,9 +575,11 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
                 return null;
             }
 
-            var state = new GameObjectState(Guid.NewGuid(), position, orientation)
+            var objectId = Guid.NewGuid();
+            var state = new GameObjectState(objectId, position, orientation)
             {
                 GameObjectName = template.Name,
+                NodeName = $"map_{ mapId}_{ template.Name.ToLower().Replace(" ", "_") }_dynamic_{ objectId }",
                 TemplateId = template.GameObjectId,
                 MapId = mapId,
                 
@@ -511,8 +609,8 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
             if (state == null)
                 return;
 
-            RemoveNonPlayerState(state.NonPlayerId);
-            _physicsWorld.RemoveNonPlayer(state.NonPlayerId);
+            RemoveNonPlayerState(state.WorldObjectId.ObjectId);
+            _physicsWorld.RemoveNonPlayer(state.WorldObjectId.ObjectId);
         }
 
         //public ProjectileState AddProjectile(
@@ -698,6 +796,8 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
 
                 nonPlayerState.Velocity = newVelocity;
 
+                //Debug.WriteLine($"[NPC]: Position = { nonPlayerState.Position } | Velocity = { nonPlayerState.Velocity }");
+
                 // #TODO: Maybe do without script and store in NonPlayerState?
                 if (nonPlayerState.Script != null)
                 {
@@ -715,6 +815,39 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
 
                     nonPlayerState.Script.CharactersInDistance.Clear();
                     nonPlayerState.Script.CharactersInDistance.AddRange(characters);
+                }
+
+
+                //if (nonPlayerState.WorldObjectId.IsNonPlayer())
+                //    Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.ffff}] New Velocity = {newVelocity} | Desired = {desiredVelocity}");
+            }
+        }
+
+        public void ProcessAreaTriggers(double fixedDelta)
+        {
+            foreach (var kvp in AreaTriggers)
+            {
+                var areaTriggerState = kvp.Value;
+
+                areaTriggerState.Script?.Update(fixedDelta);
+
+                // #TODO: Maybe do without script and store in NonPlayerState?
+                if (areaTriggerState.Script != null)
+                {
+                    var characters = Players.Values
+                        .Where(i =>
+                            Vector3.Distance(i.Position, areaTriggerState.Position) <= areaTriggerState.Script.Template.Radius)
+                        .ToList();
+
+                    foreach (var character in characters)
+                    {
+                        var foundCharacter = areaTriggerState.Script.CharactersInDistance.SingleOrDefault();
+                        if (foundCharacter == null)
+                            areaTriggerState.Script.OnPlayerMovedToRadius(character);
+                    }
+
+                    areaTriggerState.Script.CharactersInDistance.Clear();
+                    areaTriggerState.Script.CharactersInDistance.AddRange(characters);
                 }
 
 
@@ -902,7 +1035,8 @@ namespace Leatha.WarOfTheElements.Server.Objects.Game
             var caster = spell.SpellObject.Caster;
 
             var dir = GetProjectileDirection(caster);
-            var speed = 10f; // or from SpellInfo.ProjectileSpeed
+            //var speed = 10f; // or from SpellInfo.ProjectileSpeed
+            var speed = 0.1f; // or from SpellInfo.ProjectileSpeed // #TODO
 
             var velocity = dir * speed;
 

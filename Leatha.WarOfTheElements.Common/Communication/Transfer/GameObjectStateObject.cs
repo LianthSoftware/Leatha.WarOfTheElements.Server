@@ -16,6 +16,8 @@ namespace Leatha.WarOfTheElements.Common.Communication.Transfer
 
         public string GameObjectName { get; set; } = null!;
 
+        public string NodeName { get; set; } = null!;
+
         public int MapId { get; set; }
 
         public Guid? InstanceId { get; set; }

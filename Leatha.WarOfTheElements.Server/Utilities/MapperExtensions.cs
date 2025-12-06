@@ -4,7 +4,6 @@ using Leatha.WarOfTheElements.Common.Communication.Utilities;
 using Leatha.WarOfTheElements.Common.Environment.Collisions;
 using Leatha.WarOfTheElements.Server.DataAccess.Entities;
 using Leatha.WarOfTheElements.Server.DataAccess.Entities.Templates;
-using Leatha.WarOfTheElements.Server.Demo;
 using Leatha.WarOfTheElements.Server.Objects.Characters;
 using Leatha.WarOfTheElements.Server.Objects.GameObjects;
 using Leatha.WarOfTheElements.Server.Objects.Spells;
@@ -72,7 +71,7 @@ namespace Leatha.WarOfTheElements.Server.Utilities
         {
             return new NonPlayerStateObject
             {
-                WorldObjectId = new WorldObjectId(entity.NonPlayerId, WorldObjectType.NonPlayer),
+                WorldObjectId = entity.WorldObjectId,
                 TemplateId = entity.TemplateId,
                 MapId = entity.MapId,
                 InstanceId = entity.InstanceId,
@@ -110,7 +109,9 @@ namespace Leatha.WarOfTheElements.Server.Utilities
 
                 Position = entity.Position,
                 Orientation = entity.Orientation,
-                
+
+                GameObjectName = entity.GameObjectName,
+                NodeName = entity.NodeName,
             };
         }
 
@@ -207,7 +208,7 @@ namespace Leatha.WarOfTheElements.Server.Utilities
             {
                 GameObjectId = entity.GameObjectId,
                 Name = entity.Name,
-                SceneName = entity.SceneName
+                SceneName = entity.SceneName,
             };
         }
 
